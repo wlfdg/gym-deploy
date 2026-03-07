@@ -16,9 +16,6 @@ def home():
         "status": "Gym API running",
         "message": "Backend is working"
     })
-   @app.route("/health")
-def health():
-    return jsonify({"status": "ok"})
 
 # ── Database ──────────────────────────────────────────────────────────────────
 # Set DATABASE_URL in Vercel environment variables
