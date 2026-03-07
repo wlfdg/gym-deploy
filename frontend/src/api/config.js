@@ -2,5 +2,5 @@
 // During local dev: uses localhost
 // On Vercel: uses REACT_APP_API_URL environment variable
 const API = process.env.REACT_APP_API_URL || "// config.js (fixed)
-export const BASE_URL = "https://gym-deploy-sul4.onrender.com";";
+export const BASE_URL = "https://gym-deploy-sul4.onrender.com"; // Render backend URL
 export default API;
