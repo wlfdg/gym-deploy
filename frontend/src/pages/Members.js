@@ -31,9 +31,9 @@ function MemberModal({ member, onClose, onSave }) {
     setSaving(true);
     try {
       if (member) {
-        await axios.put(`${API}/members/${member.id}`, form);
+        await axios.put(`${API}${BASE_URL}/members/${member.id}`, form);
       } else {
-        await axios.post(`${API}/members`, form);
+        await axios.post(`${API}${BASE_URL}/members`, form);
       }
       onSave();
       onClose();
@@ -122,7 +122,7 @@ function Members() {
     setLoading(true);
     setError("");
     try {
-      const res = await axios.get(`${API}/members`);
+      const res = await axios.get(`${API}${BASE_URL}/members`);
       setMembers(res.data);
     } catch {
       setError("Failed to load members. Is the server running?");
@@ -135,7 +135,7 @@ function Members() {
   const deleteMember = async (id, name) => {
     if (!window.confirm(`Delete ${name}? This cannot be undone.`)) return;
     try {
-      await axios.delete(`${API}/members/${id}`);
+      await axios.delete(`${API}${BASE_URL}/members${id}`);
       fetchMembers();
     } catch {
       alert("Failed to delete member.");
