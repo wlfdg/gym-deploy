@@ -8,11 +8,10 @@ import io
 import hashlib
 import os
 
-# 1️⃣ Create the Flask app BEFORE defining any routes
 app = Flask(__name__)
 CORS(app, origins="*")
 
-# Now all @app.route(...) go below
+# Optional health check for frontend
 @app.route("/")
 def index():
     return jsonify({"message": "Server is running"})
