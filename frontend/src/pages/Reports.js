@@ -26,7 +26,7 @@ function Reports() {
     setLoading(true);
     setSuccess(false);
     try {
-      const res = await fetch(`${API}/report/excel?month=${month}&year=${year}`);
+      const res = await fetch(`${API}${BASE_URL}/report/excel?month=${month}&year=${year}`);
       const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);
       const a = document.createElement("a");
