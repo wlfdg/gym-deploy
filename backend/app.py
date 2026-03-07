@@ -9,7 +9,16 @@ import hashlib
 import os
 
 app = Flask(__name__)
-CORS(app, origins="*")
+CORS(app, resources={r"/*": {"origins": "*"}})
+@app.route("/")
+def home():
+    return jsonify({
+        "status": "Gym API running",
+        "message": "Backend is working"
+    })
+    @app.route("/health")
+def health():
+    return jsonify({"status": "ok"})
 
 # ── Database ──────────────────────────────────────────────────────────────────
 # Set DATABASE_URL in Vercel environment variables
@@ -18,7 +27,13 @@ CORS(app, origins="*")
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
 def get_db():
-    conn = psycopg2.connect(DATABASE_URL)
+    if not DATABASE_URL:
+        raise Exception("DATABASE_URL environment variable not set")
+
+    conn = psycopg2.connect(
+        DATABASE_URL,
+        sslmode="require"
+    )
     return conn
 
 def hash_password(password: str) -> str:
@@ -64,8 +79,8 @@ def login():
     admin = cur.fetchone()
     cur.close()
     conn.close()
-    if admin:
-        return jsonify({"success": True, "username": admin[0] if not hasattr(admin, 'keys') else admin["username"]})
+     admin:
+        return jsony({"success": True, "username": admin[0] if not hasattr(admin, 'keys') else admin["username"]})
     return error("Invalid username or password.", 401)
 
 @app.route("/register", methods=["POST"])
@@ -648,4 +663,5 @@ def report_excel():
 
 
 if __name__ == "__main__":
-    app.run(debug=True, port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
