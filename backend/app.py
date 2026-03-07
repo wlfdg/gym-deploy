@@ -367,7 +367,7 @@ def stats():
     cur.execute("SELECT COUNT(*) FROM members")
     total = cur.fetchone()[0]
 
-    cur.execute("SELECT COUNT(*) FROM members WHERE expiration_date >= CURRENT_DATE")
+    cur.execute("SELECT COUNT(*) FROM members WHERE expiration_date >= CURRENT_DATE::text")
     active = cur.fetchone()[0]
 
     cur.execute("SELECT COALESCE(SUM(price - (price * discount / 100)), 0) FROM members")
@@ -490,7 +490,7 @@ def report_excel():
     cur.execute("SELECT * FROM members ORDER BY name ASC")
     all_members = rows_to_list(cur.fetchall(), cur)
 
-    cur.execute("SELECT * FROM members WHERE expiration_date >= CURRENT_DATE")
+    cur.execute("SELECT * FROM members WHERE expiration_date >= CURRENT_DATE::text")
     active_members = rows_to_list(cur.fetchall(), cur)
 
     cur.execute("SELECT * FROM walkins WHERE TO_CHAR(date::date,'YYYY-MM')=%s ORDER BY date ASC", (month_str,))
