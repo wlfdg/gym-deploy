@@ -22,7 +22,7 @@ function Walkins() {
     setLoading(true);
     setError("");
     try {
-      const res = await axios.get(`${API}/walkins?date=${selectedDate}`);
+      const res = await axios.get(`${API}${BASE_URL}/walkins?date=${selectedDate}`);
       setData(res.data);
     } catch {
       setError("Could not load walk-in data.");
@@ -44,7 +44,7 @@ function Walkins() {
     setAdding(true);
     try {
       // Pass the selected date so entries can be added to any date
-      await axios.post(`${API}/walkins`, { name: name.trim(), amount, note: note.trim(), date: selectedDate });
+      await axios.post(`${API}${BASE_URL}/walkins`, { name: name.trim(), amount, note: note.trim(), date: selectedDate });
       setName(""); setAmount(""); setNote("");
       showSuccess("Walk-in recorded!");
       fetchWalkins();
@@ -57,7 +57,7 @@ function Walkins() {
   const deleteWalkin = async (id) => {
     if (!window.confirm("Remove this walk-in entry?")) return;
     try {
-      await axios.delete(`${API}/walkins/${id}`);
+      await axios.delete(`${API}${BASE_URL}/walkins/${id}`);
       fetchWalkins();
     } catch {
       setError("Failed to delete entry.");
