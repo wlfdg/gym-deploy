@@ -7,6 +7,7 @@ const NAV_LINKS = [
   { to: "/walkins",    icon: "🚶", label: "Walk-ins" },
   { to: "/alerts",     icon: "🔔", label: "Alerts" },
   { to: "/reports",    icon: "📊", label: "Reports" },
+  { to: "/dtr",        icon: "🗓", label: "DTR" },
 ];
 
 function Layout({ children }) {
@@ -38,7 +39,7 @@ function Layout({ children }) {
           ))}
         </nav>
         <div className="sidebar-footer">
-          <div style={{ fontSize: 11, color: "var(--muted)", marginBottom: 10, textTransform: "uppercase", letterSpacing: 1 }}>
+          <div style={{ fontSize:11, color:"var(--muted)", marginBottom:10, textTransform:"uppercase", letterSpacing:1 }}>
             {admin}
           </div>
           <button className="logout-btn" onClick={logout}>↩ Logout</button>

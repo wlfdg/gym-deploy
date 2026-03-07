@@ -11,11 +11,6 @@ import os
 app = Flask(__name__)
 CORS(app, origins="*")
 
-# Optional health check for frontend
-@app.route("/")
-def index():
-    return jsonify({"message": "Server is running"})
-
 # ── Database ──────────────────────────────────────────────────────────────────
 # Set DATABASE_URL in Vercel environment variables
 # Format: postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/postgres
@@ -23,13 +18,7 @@ def index():
 DATABASE_URL = os.environ.get("DATABASE_URL")
 
 def get_db():
-    if not DATABASE_URL:
-        raise Exception("DATABASE_URL environment variable not set")
-
-    conn = psycopg2.connect(
-        DATABASE_URL,
-        sslmode="require"
-    )
+    conn = psycopg2.connect(DATABASE_URL)
     return conn
 
 def hash_password(password: str) -> str:
@@ -75,11 +64,8 @@ def login():
     admin = cur.fetchone()
     cur.close()
     conn.close()
-    
-    # 👇 This must have no extra spaces or stray text
     if admin:
         return jsonify({"success": True, "username": admin[0] if not hasattr(admin, 'keys') else admin["username"]})
-    
     return error("Invalid username or password.", 401)
 
 @app.route("/register", methods=["POST"])
@@ -367,7 +353,7 @@ def stats():
     cur.execute("SELECT COUNT(*) FROM members")
     total = cur.fetchone()[0]
 
-    cur.execute("SELECT COUNT(*) FROM members WHERE expiration_date >= TO_CHAR(CURRENT_DATE, 'YYYY-MM-DD')::text")
+    cur.execute("SELECT COUNT(*) FROM members WHERE expiration_date >= CURRENT_DATE")
     active = cur.fetchone()[0]
 
     cur.execute("SELECT COALESCE(SUM(price - (price * discount / 100)), 0) FROM members")
@@ -490,7 +476,7 @@ def report_excel():
     cur.execute("SELECT * FROM members ORDER BY name ASC")
     all_members = rows_to_list(cur.fetchall(), cur)
 
-    cur.execute("SELECT * FROM members WHERE expiration_date >= TO_CHAR(CURRENT_DATE, 'YYYY-MM-DD')::text")
+    cur.execute("SELECT * FROM members WHERE expiration_date >= CURRENT_DATE")
     active_members = rows_to_list(cur.fetchall(), cur)
 
     cur.execute("SELECT * FROM walkins WHERE TO_CHAR(date::date,'YYYY-MM')=%s ORDER BY date ASC", (month_str,))
@@ -661,7 +647,112 @@ def report_excel():
     return response
 
 
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+# ── Admin DTR ─────────────────────────────────────────────────────────────────
 
+@app.route("/admin/dtr/timein", methods=["POST"])
+def admin_time_in():
+    data = request.json or {}
+    username = data.get("username", "").strip()
+    if not username:
+        return error("Username is required.")
+    today = datetime.now().strftime("%Y-%m-%d")
+    time_now = datetime.now().strftime("%I:%M %p")
+    conn = get_db()
+    cur = conn.cursor()
+    # Check if already timed in today without timing out
+    cur.execute(
+        "SELECT id FROM admin_dtr WHERE admin_username=%s AND date=%s AND time_out IS NULL",
+        (username, today)
+    )
+    existing = cur.fetchone()
+    if existing:
+        cur.close(); conn.close()
+        return error(f"{username} is already timed in today.")
+    cur.execute(
+        "INSERT INTO admin_dtr (admin_username, date, time_in) VALUES (%s, %s, %s)",
+        (username, today, time_now)
+    )
+    conn.commit()
+    cur.close(); conn.close()
+    return jsonify({"message": f"Time in recorded for {username} at {time_now}"})
+
+
+@app.route("/admin/dtr/timeout", methods=["POST"])
+def admin_time_out():
+    data = request.json or {}
+    username = data.get("username", "").strip()
+    if not username:
+        return error("Username is required.")
+    today = datetime.now().strftime("%Y-%m-%d")
+    time_now = datetime.now().strftime("%I:%M %p")
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT id FROM admin_dtr WHERE admin_username=%s AND date=%s AND time_out IS NULL",
+        (username, today)
+    )
+    record = cur.fetchone()
+    if not record:
+        cur.close(); conn.close()
+        return error(f"No active time-in found for {username} today.")
+    cur.execute(
+        "UPDATE admin_dtr SET time_out=%s WHERE id=%s",
+        (time_now, record[0])
+    )
+    conn.commit()
+    cur.close(); conn.close()
+    return jsonify({"message": f"Time out recorded for {username} at {time_now}"})
+
+
+@app.route("/admin/dtr", methods=["GET"])
+def get_admin_dtr():
+    date = request.args.get("date", datetime.now().strftime("%Y-%m-%d"))
+    username = request.args.get("username", "")
+    conn = get_db()
+    cur = conn.cursor()
+    if username:
+        cur.execute(
+            "SELECT * FROM admin_dtr WHERE admin_username=%s ORDER BY date DESC, id DESC",
+            (username,)
+        )
+    else:
+        cur.execute(
+            "SELECT * FROM admin_dtr WHERE date=%s ORDER BY id DESC",
+            (date,)
+        )
+    rows = rows_to_list(cur.fetchall(), cur)
+    cur.close(); conn.close()
+    return jsonify(rows)
+
+
+@app.route("/admin/dtr/all", methods=["GET"])
+def get_all_admin_dtr():
+    month = request.args.get("month", datetime.now().strftime("%m"))
+    year  = request.args.get("year",  datetime.now().strftime("%Y"))
+    prefix = f"{year}-{month.zfill(2)}"
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        "SELECT * FROM admin_dtr WHERE date LIKE %s ORDER BY date DESC, admin_username ASC",
+        (f"{prefix}%",)
+    )
+    rows = rows_to_list(cur.fetchall(), cur)
+    cur.close(); conn.close()
+    return jsonify(rows)
+
+
+@app.route("/admin/dtr/<int:dtr_id>", methods=["DELETE"])
+def delete_admin_dtr(dtr_id):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM admin_dtr WHERE id=%s", (dtr_id,))
+    conn.commit()
+    affected = cur.rowcount
+    cur.close(); conn.close()
+    if affected == 0:
+        return error("Record not found.", 404)
+    return jsonify({"message": "Record deleted"})
+
+
+if __name__ == "__main__":
+    app.run(debug=True, port=5000)
