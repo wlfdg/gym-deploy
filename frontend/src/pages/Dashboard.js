@@ -21,8 +21,8 @@ function Dashboard() {
     setError("");
     try {
       const [s, e] = await Promise.all([
-        axios.get(`${API}/stats`),
-        axios.get(`${API}/expiring?days=7`)
+        axios.get(`${BASE_URL}/stats`)
+        .then(res => setStats(res.data))
       ]);
       setStats(s.data);
       setExpiring(e.data);
