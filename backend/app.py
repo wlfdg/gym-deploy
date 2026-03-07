@@ -76,8 +76,11 @@ def login():
     admin = cur.fetchone()
     cur.close()
     conn.close()
-     admin:
-        return jsony({"success": True, "username": admin[0] if not hasattr(admin, 'keys') else admin["username"]})
+    
+    # 👇 This must have no extra spaces or stray text
+    if admin:
+        return jsonify({"success": True, "username": admin[0] if not hasattr(admin, 'keys') else admin["username"]})
+    
     return error("Invalid username or password.", 401)
 
 @app.route("/register", methods=["POST"])
