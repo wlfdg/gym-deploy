@@ -8,17 +8,14 @@ import io
 import hashlib
 import os
 
+# 1️⃣ Create the Flask app BEFORE defining any routes
+app = Flask(__name__)
+CORS(app, origins="*")
+
+# Now all @app.route(...) go below
 @app.route("/")
 def index():
-    return jsonify({"status": "Gym API is running"})
-app = Flask(__name__)
-CORS(app, resources={r"/*": {"origins": "*"}})
-@app.route("/")
-def home():
-    return jsonify({
-        "status": "Gym API running",
-        "message": "Backend is working"
-    })
+    return jsonify({"message": "Server is running"})
 
 # ── Database ──────────────────────────────────────────────────────────────────
 # Set DATABASE_URL in Vercel environment variables
