@@ -42,7 +42,7 @@ function Attendance() {
 
   const fetchMembers = useCallback(async () => {
     try {
-      const res = await axios.get(`${API}/members`);
+      const res = await axios.get(`${API}${BASE_URL}/members`);
       setMembers(res.data);
     } catch {
       setError("Could not load members.");
