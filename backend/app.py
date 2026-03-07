@@ -16,7 +16,7 @@ def home():
         "status": "Gym API running",
         "message": "Backend is working"
     })
-    @app.route("/health")
+   @app.route("/health")
 def health():
     return jsonify({"status": "ok"})
 
