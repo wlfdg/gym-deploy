@@ -580,3 +580,35 @@ tr:hover td { background: rgba(255,255,255,0.02); }
 @media (min-width: 1025px) and (max-width: 1366px) {
   .main { padding: 28px 30px; }
 }
+
+/* ── Dashboard helpers ── */
+.dash-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.dash-card-accent {
+  borderColor: rgba(232,255,0,0.2);
+  background: linear-gradient(135deg, #1a1a1a 0%, #1f1f0a 100%);
+}
+.dash-card-green {
+  borderColor: rgba(0,230,118,0.2);
+  background: linear-gradient(135deg, #1a1a1a 0%, #0a1f12 100%);
+}
+.dash-card-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+.dash-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+@media (max-width: 768px) {
+  .dash-row { grid-template-columns: 1fr; gap: 12px; }
+}

@@ -1,32 +1,30 @@
-import { useEffect, useState, useCallback } from "react";
-import axios from "axios";
+import { useEffect, useState, useCallback, useRef } from "react";
+import { api, clearCache } from "../api/config";
 import Layout from "../components/Layout";
 
-import API from "../api/config";
-
 function Walkins() {
-  const [data, setData] = useState({ walkins: [], total: 0, date: "" });
-  const [name, setName] = useState("");
-  const [amount, setAmount] = useState("");
-  const [note, setNote] = useState("");
+  const [data, setData]         = useState({ walkins: [], total: 0, date: "" });
+  const [name, setName]         = useState("");
+  const [amount, setAmount]     = useState("");
+  const [note, setNote]         = useState("");
   const [selectedDate, setSelectedDate] = useState(() => new Date().toISOString().split("T")[0]);
-  const [loading, setLoading] = useState(true);
-  const [adding, setAdding] = useState(false);
-  const [error, setError] = useState("");
+  const [loading, setLoading]   = useState(true);
+  const [adding, setAdding]     = useState(false);
+  const [error, setError]       = useState("");
   const [successMsg, setSuccessMsg] = useState("");
+  const mounted = useRef(true);
 
-  const today = new Date().toISOString().split("T")[0];
+  const today   = new Date().toISOString().split("T")[0];
   const isToday = selectedDate === today;
 
+  useEffect(() => { return () => { mounted.current = false; }; }, []);
+
   const fetchWalkins = useCallback(async () => {
-    setLoading(true);
-    setError("");
+    setLoading(true); setError("");
     try {
-      const res = await axios.get(`${API}${BASE_URL}/walkins?date=${selectedDate}`);
-      setData(res.data);
-    } catch {
-      setError("Could not load walk-in data.");
-    }
+      const res = await api.get(`/walkins?date=${selectedDate}`);
+      if (mounted.current) setData(res.data);
+    } catch { setError("Could not load walk-in data."); }
     setLoading(false);
   }, [selectedDate]);
 
@@ -39,32 +37,24 @@ function Walkins() {
 
   const addWalkin = async () => {
     setError("");
-    if (!name.trim()) { setError("Name is required."); return; }
-    if (!amount || Number(amount) <= 0) { setError("Please enter a valid amount."); return; }
+    if (!name.trim())                      { setError("Name is required."); return; }
+    if (!amount || Number(amount) <= 0)    { setError("Please enter a valid amount."); return; }
     setAdding(true);
     try {
-      // Pass the selected date so entries can be added to any date
-      await axios.post(`${API}${BASE_URL}/walkins`, { name: name.trim(), amount, note: note.trim(), date: selectedDate });
+      await api.post("/walkins", { name: name.trim(), amount, note: note.trim(), date: selectedDate });
+      clearCache();
       setName(""); setAmount(""); setNote("");
       showSuccess("Walk-in recorded!");
       fetchWalkins();
-    } catch (e) {
-      setError(e.response?.data?.message || "Failed to record walk-in.");
-    }
+    } catch (e) { setError(e.response?.data?.message || "Failed to record walk-in."); }
     setAdding(false);
   };
 
   const deleteWalkin = async (id) => {
     if (!window.confirm("Remove this walk-in entry?")) return;
-    try {
-      await axios.delete(`${API}${BASE_URL}/walkins/${id}`);
-      fetchWalkins();
-    } catch {
-      setError("Failed to delete entry.");
-    }
+    try { await api.delete(`/walkins/${id}`); clearCache(); fetchWalkins(); }
+    catch { setError("Failed to delete entry."); }
   };
-
-  const handleKey = (e) => { if (e.key === "Enter") addWalkin(); };
 
   return (
     <Layout>
@@ -73,7 +63,6 @@ function Walkins() {
         <p>Track daily walk-in revenue</p>
       </div>
 
-      {/* Revenue summary */}
       <div className="card" style={{ marginBottom: 20, borderColor: "rgba(232,255,0,0.2)", background: "linear-gradient(135deg, #1a1a1a 0%, #1f1f0a 100%)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 40, flexWrap: "wrap" }}>
           <div>
@@ -88,54 +77,39 @@ function Walkins() {
             </div>
           </div>
           <div style={{ flex: 1, minWidth: 180 }}>
-            <label style={{ display: "block", fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>
-              View by date
-            </label>
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={e => setSelectedDate(e.target.value)}
-              style={{ width: "100%" }}
-            />
+            <label style={{ display: "block", fontSize: 11, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>View by date</label>
+            <input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)} style={{ width: "100%" }} />
           </div>
         </div>
       </div>
 
-      {/* Error / success messages */}
-      {error && (
-        <div className="error-msg" style={{ marginBottom: 16 }}>{error}</div>
-      )}
+      {error    && <div className="error-msg" style={{ marginBottom: 16 }}>{error}</div>}
       {successMsg && (
-        <div style={{
-          background: "rgba(0,230,118,0.1)", border: "1px solid rgba(0,230,118,0.3)",
-          color: "var(--success)", padding: "12px 16px", borderRadius: 8,
-          fontSize: 13, fontWeight: 600, marginBottom: 16
-        }}>
+        <div style={{ background: "rgba(0,230,118,0.1)", border: "1px solid rgba(0,230,118,0.3)", color: "var(--success)", padding: "12px 16px", borderRadius: 8, fontSize: 13, fontWeight: 600, marginBottom: 16 }}>
           ✅ {successMsg}
         </div>
       )}
 
-      {/* Add walk-in form */}
       <div className="card" style={{ marginBottom: 20 }}>
         <h3 style={{ fontSize: 22, marginBottom: 18 }}>+ Record Walk-in</h3>
         <div className="form-grid">
           <div className="form-group">
             <label>Name *</label>
             <input placeholder="e.g. John Doe / Guest" value={name}
-              onChange={e => setName(e.target.value)} onKeyDown={handleKey} autoComplete="off" />
+              onChange={e => setName(e.target.value)} onKeyDown={e => e.key === "Enter" && addWalkin()} autoComplete="off" />
           </div>
           <div className="form-group">
             <label>Amount (₱) *</label>
             <input type="number" min="1" placeholder="100" value={amount}
-              onChange={e => setAmount(e.target.value)} onKeyDown={handleKey} />
+              onChange={e => setAmount(e.target.value)} onKeyDown={e => e.key === "Enter" && addWalkin()} />
           </div>
           <div className="form-group full">
             <label>Note (optional)</label>
             <input placeholder="e.g. Day pass, Locker fee..." value={note}
-              onChange={e => setNote(e.target.value)} onKeyDown={handleKey} />
+              onChange={e => setNote(e.target.value)} onKeyDown={e => e.key === "Enter" && addWalkin()} />
           </div>
         </div>
-        <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 12 }}>
+        <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
           <span style={{ fontSize: 12, color: "var(--muted)" }}>
             Recording for: <strong style={{ color: "var(--text)" }}>{selectedDate}</strong>
           </span>
@@ -145,7 +119,6 @@ function Walkins() {
         </div>
       </div>
 
-      {/* Walk-ins table */}
       <div className="card">
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
           <h3 style={{ fontSize: 22 }}>Entries</h3>
@@ -156,39 +129,29 @@ function Walkins() {
         ) : data.walkins.length === 0 ? (
           <div className="empty-state">No walk-ins recorded for {selectedDate}.</div>
         ) : (
-          <table>
-            <thead>
-              <tr>
-                <th>#</th><th>Name</th><th>Amount</th><th>Note</th><th>Action</th>
-              </tr>
-            </thead>
-            <tbody>
-              {data.walkins.map((w, i) => (
-                <tr key={w.id}>
-                  <td style={{ color: "var(--muted)", fontSize: 12 }}>{i + 1}</td>
-                  <td style={{ fontWeight: 600 }}>{w.name}</td>
-                  <td style={{ color: "var(--accent)", fontWeight: 600 }}>₱{Number(w.amount).toLocaleString()}</td>
-                  <td style={{ color: "var(--muted)", fontSize: 12 }}>{w.note || "—"}</td>
-                  <td>
-                    <button className="btn btn-danger btn-sm" onClick={() => deleteWalkin(w.id)}>
-                      Remove
-                    </button>
-                  </td>
+          <div className="table-wrap">
+            <table>
+              <thead><tr><th>#</th><th>Name</th><th>Amount</th><th>Note</th><th>Action</th></tr></thead>
+              <tbody>
+                {data.walkins.map((w, i) => (
+                  <tr key={w.id}>
+                    <td style={{ color: "var(--muted)", fontSize: 12 }}>{i + 1}</td>
+                    <td style={{ fontWeight: 600 }}>{w.name}</td>
+                    <td style={{ color: "var(--accent)", fontWeight: 600 }}>₱{Number(w.amount).toLocaleString()}</td>
+                    <td style={{ color: "var(--muted)", fontSize: 12 }}>{w.note || "—"}</td>
+                    <td><button className="btn btn-danger btn-sm" onClick={() => deleteWalkin(w.id)}>Remove</button></td>
+                  </tr>
+                ))}
+              </tbody>
+              <tfoot>
+                <tr>
+                  <td colSpan="2" style={{ fontWeight: 700, fontSize: 13, paddingTop: 14, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1 }}>Total</td>
+                  <td style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 24, color: "var(--accent)", paddingTop: 14 }}>₱{data.total.toLocaleString()}</td>
+                  <td colSpan="2" />
                 </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr>
-                <td colSpan="2" style={{ fontWeight: 700, fontSize: 13, paddingTop: 14, color: "var(--muted)", textTransform: "uppercase", letterSpacing: 1 }}>
-                  Total
-                </td>
-                <td style={{ fontFamily: "'Bebas Neue', cursive", fontSize: 24, color: "var(--accent)", paddingTop: 14 }}>
-                  ₱{data.total.toLocaleString()}
-                </td>
-                <td colSpan="2" />
-              </tr>
-            </tfoot>
-          </table>
+              </tfoot>
+            </table>
+          </div>
         )}
       </div>
     </Layout>
