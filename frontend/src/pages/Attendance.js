@@ -52,7 +52,7 @@ function Attendance() {
   const fetchAttendance = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await axios.get(`${API}/attendance?date=${selectedDate}`);
+      const res = await axios.get(`${API}${BASE_URL}/attendance?date=${selectedDate}`);
       setData(res.data);
     } catch {
       setError("Could not load attendance records.");
@@ -70,7 +70,7 @@ function Attendance() {
 
   const timeIn = async (member) => {
     try {
-      const res = await axios.post(`${API}/attendance/timein`, { member_id: member.id });
+      const res = await axios.post(`${API}${BASE_URL}/attendance`, { member_id: member.id });
       showMsg(res.data.message, "success");
       fetchAttendance();
     } catch (e) {
@@ -81,7 +81,7 @@ function Attendance() {
 
   const timeOut = async (memberId) => {
     try {
-      const res = await axios.post(`${API}/attendance/timeout`, { member_id: memberId });
+      const res = await axios.post(`${API}${BASE_URL}/attendance`, { member_id: memberId });
       showMsg(res.data.message, "success");
       fetchAttendance();
     } catch (e) {
