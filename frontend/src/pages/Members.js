@@ -1,23 +1,19 @@
-import { useEffect, useState, useCallback } from "react";
-import axios from "axios";
+import { useEffect, useState, useCallback, useMemo, useRef } from "react";
+import { api, clearCache } from "../api/config";
 import Layout from "../components/Layout";
 
-import API from "../api/config";
 const PLANS = ["Basic", "Standard", "Premium", "Student", "Senior"];
 const EMPTY_FORM = { name: "", email: "", phone: "", plan: "Basic", months: "", price: "", discount: "0" };
 
 function getStatus(exp) {
-  const diff = Math.ceil((new Date(exp) - new Date()) / (1000 * 60 * 60 * 24));
-  if (diff < 0)  return { label: "Expired",       cls: "badge-expired" };
-  if (diff <= 7) return { label: "Expiring Soon",  cls: "badge-expiring" };
-  return           { label: "Active",             cls: "badge-active" };
+  const diff = Math.ceil((new Date(exp) - new Date()) / 864e5);
+  if (diff < 0)  return { label: "Expired",      cls: "badge-expired" };
+  if (diff <= 7) return { label: "Expiring Soon", cls: "badge-expiring" };
+  return           { label: "Active",            cls: "badge-active" };
 }
 
 function MemberModal({ member, onClose, onSave }) {
-  const [form, setForm] = useState(() => member
-    ? { ...member, discount: member.discount ?? "0" }
-    : { ...EMPTY_FORM }
-  );
+  const [form, setForm]   = useState(() => member ? { ...member, discount: member.discount ?? "0" } : { ...EMPTY_FORM });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
@@ -25,16 +21,17 @@ function MemberModal({ member, onClose, onSave }) {
 
   const save = async () => {
     setError("");
-    if (!form.name.trim()) { setError("Full name is required."); return; }
+    if (!form.name.trim())                       { setError("Full name is required."); return; }
     if (!form.months || Number(form.months) < 1) { setError("Duration must be at least 1 month."); return; }
-    if (!form.price || Number(form.price) < 0)   { setError("Please enter a valid price."); return; }
+    if (!form.price  || Number(form.price)  < 0) { setError("Please enter a valid price."); return; }
     setSaving(true);
     try {
       if (member) {
-        await axios.put(`${API}${BASE_URL}/members/${member.id}`, form);
+        await api.put(`/members/${member.id}`, form);
       } else {
-        await axios.post(`${API}${BASE_URL}/members`, form);
+        await api.post("/members", form);
       }
+      clearCache();
       onSave();
       onClose();
     } catch (e) {
@@ -43,20 +40,17 @@ function MemberModal({ member, onClose, onSave }) {
     setSaving(false);
   };
 
-  const handleKey = (e) => { if (e.key === "Enter") save(); };
-
   return (
     <div className="modal-overlay" onClick={e => e.target === e.currentTarget && onClose()}>
       <div className="modal">
         <h3>{member ? "Edit Member" : "Add Member"}</h3>
-        {error && (
-          <div className="error-msg" style={{ marginBottom: 16 }}>{error}</div>
-        )}
+        {error && <div className="error-msg" style={{ marginBottom: 16 }}>{error}</div>}
         <div className="form-grid">
           <div className="form-group full">
             <label>Full Name *</label>
             <input placeholder="John Doe" value={form.name}
-              onChange={e => set("name", e.target.value)} onKeyDown={handleKey} autoFocus />
+              onChange={e => set("name", e.target.value)}
+              onKeyDown={e => e.key === "Enter" && save()} autoFocus />
           </div>
           <div className="form-group">
             <label>Email</label>
@@ -77,12 +71,14 @@ function MemberModal({ member, onClose, onSave }) {
           <div className="form-group">
             <label>Duration (Months) *</label>
             <input type="number" min="1" max="60" placeholder="1"
-              value={form.months} onChange={e => set("months", e.target.value)} onKeyDown={handleKey} />
+              value={form.months} onChange={e => set("months", e.target.value)}
+              onKeyDown={e => e.key === "Enter" && save()} />
           </div>
           <div className="form-group">
             <label>Price (₱) *</label>
             <input type="number" min="0" placeholder="999"
-              value={form.price} onChange={e => set("price", e.target.value)} onKeyDown={handleKey} />
+              value={form.price} onChange={e => set("price", e.target.value)}
+              onKeyDown={e => e.key === "Enter" && save()} />
           </div>
           <div className="form-group">
             <label>Discount (%)</label>
@@ -109,22 +105,27 @@ function MemberModal({ member, onClose, onSave }) {
 }
 
 function Members() {
-  const [members, setMembers] = useState([]);
-  const [search, setSearch] = useState("");
+  const [members, setMembers]       = useState([]);
+  const [search, setSearch]         = useState("");
   const [planFilter, setPlanFilter] = useState("All");
   const [statusFilter, setStatusFilter] = useState("All");
-  const [showModal, setShowModal] = useState(false);
+  const [showModal, setShowModal]   = useState(false);
   const [editMember, setEditMember] = useState(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const [loading, setLoading]       = useState(true);
+  const [error, setError]           = useState("");
+  const mounted = useRef(true);
+
+  useEffect(() => { return () => { mounted.current = false; }; }, []);
 
   const fetchMembers = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const res = await axios.get(`${API}${BASE_URL}/members`);
+      const res = await api.get("/members");
+      if (!mounted.current) return;
       setMembers(res.data);
     } catch {
+      if (!mounted.current) return;
       setError("Failed to load members. Is the server running?");
     }
     setLoading(false);
@@ -135,29 +136,27 @@ function Members() {
   const deleteMember = async (id, name) => {
     if (!window.confirm(`Delete ${name}? This cannot be undone.`)) return;
     try {
-      await axios.delete(`${API}${BASE_URL}/members${id}`);
+      await api.delete(`/members/${id}`);
+      clearCache();
       fetchMembers();
     } catch {
       alert("Failed to delete member.");
     }
   };
 
-  const filtered = members.filter(m => {
+  // useMemo so filtering only reruns when deps change
+  const filtered = useMemo(() => members.filter(m => {
     const q = search.toLowerCase();
-    const matchSearch = !q ||
-      m.name.toLowerCase().includes(q) ||
-      m.email?.toLowerCase().includes(q) ||
-      m.phone?.includes(q);
-    const matchPlan = planFilter === "All" || m.plan === planFilter;
-    if (!matchSearch || !matchPlan) return false;
+    if (q && !m.name.toLowerCase().includes(q) && !m.email?.toLowerCase().includes(q) && !m.phone?.includes(q)) return false;
+    if (planFilter !== "All" && m.plan !== planFilter) return false;
     if (statusFilter !== "All") {
       const s = getStatus(m.expiration_date);
-      if (statusFilter === "Active" && s.label !== "Active") return false;
+      if (statusFilter === "Active"   && s.label !== "Active")        return false;
       if (statusFilter === "Expiring" && s.label !== "Expiring Soon") return false;
-      if (statusFilter === "Expired" && s.label !== "Expired") return false;
+      if (statusFilter === "Expired"  && s.label !== "Expired")       return false;
     }
     return true;
-  });
+  }), [members, search, planFilter, statusFilter]);
 
   return (
     <Layout>
@@ -171,11 +170,8 @@ function Members() {
       <div className="toolbar">
         <div className="search-box">
           <span className="search-icon">🔍</span>
-          <input
-            placeholder="Search by name, email or phone..."
-            value={search}
-            onChange={e => setSearch(e.target.value)}
-          />
+          <input placeholder="Search by name, email or phone..."
+            value={search} onChange={e => setSearch(e.target.value)} />
         </div>
         <select value={planFilter} onChange={e => setPlanFilter(e.target.value)}
           style={{ width: "auto", padding: "10px 14px" }}>
@@ -189,7 +185,7 @@ function Members() {
           <option value="Expiring">Expiring Soon</option>
           <option value="Expired">Expired</option>
         </select>
-        <button className="btn btn-ghost" onClick={() => window.open(`${API}/export/csv`, "_blank")}>
+        <button className="btn btn-ghost" onClick={() => window.open(`${process.env.REACT_APP_API_URL || "https://gym-deploy-sul4.onrender.com"}/export/csv`, "_blank")}>
           ⬇ Export CSV
         </button>
         <button className="btn btn-primary" onClick={() => { setEditMember(null); setShowModal(true); }}>
@@ -224,11 +220,7 @@ function Members() {
                         {m.email && <div style={{ fontSize: 11, color: "var(--muted)" }}>{m.email}</div>}
                         {m.phone && <div style={{ fontSize: 11, color: "var(--muted)" }}>{m.phone}</div>}
                       </td>
-                      <td>
-                        <span className="badge" style={{ background: "rgba(232,255,0,0.1)", color: "var(--accent)" }}>
-                          {m.plan}
-                        </span>
-                      </td>
+                      <td><span className="badge" style={{ background: "rgba(232,255,0,0.1)", color: "var(--accent)" }}>{m.plan}</span></td>
                       <td>{m.months}mo</td>
                       <td style={{ fontWeight: 600 }}>₱{net.toLocaleString()}</td>
                       <td>{m.discount > 0
@@ -241,13 +233,9 @@ function Members() {
                       <td>
                         <div style={{ display: "flex", gap: 6 }}>
                           <button className="btn btn-ghost btn-sm"
-                            onClick={() => { setEditMember(m); setShowModal(true); }}>
-                            Edit
-                          </button>
+                            onClick={() => { setEditMember(m); setShowModal(true); }}>Edit</button>
                           <button className="btn btn-danger btn-sm"
-                            onClick={() => deleteMember(m.id, m.name)}>
-                            Del
-                          </button>
+                            onClick={() => deleteMember(m.id, m.name)}>Del</button>
                         </div>
                       </td>
                     </tr>
@@ -265,11 +253,7 @@ function Members() {
       </div>
 
       {showModal && (
-        <MemberModal
-          member={editMember}
-          onClose={() => setShowModal(false)}
-          onSave={fetchMembers}
-        />
+        <MemberModal member={editMember} onClose={() => setShowModal(false)} onSave={fetchMembers} />
       )}
     </Layout>
   );
