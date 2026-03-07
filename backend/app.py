@@ -8,6 +8,9 @@ import io
 import hashlib
 import os
 
+@app.route("/")
+def index():
+    return jsonify({"status": "Gym API is running"})
 app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}})
 @app.route("/")
