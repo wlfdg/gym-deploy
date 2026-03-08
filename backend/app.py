@@ -91,23 +91,28 @@ def login():
         return error("Your account has been disabled. Contact the primary admin.", 403)
     log_activity(admin_username, "LOGIN", f"Logged in")
     # Auto time-in: record shift start in admin_dtr
+    shift_id = None
     try:
-        today    = datetime.now(PHT).strftime("%Y-%m-%d")
-        time_now = datetime.now(PHT).strftime("%Y-%m-%d %H:%M:%S")
+        today     = datetime.now(PHT).strftime("%Y-%m-%d")
+        time_now  = datetime.now(PHT).strftime("%I:%M %p")
+        ts_now    = datetime.now(PHT).strftime("%Y-%m-%d %H:%M:%S")
         conn2 = get_db(); cur2 = conn2.cursor()
-        # Close any unclosed shifts first (e.g. crash/browser close)
-        cur2.execute("UPDATE admin_dtr SET time_out=%s WHERE admin_username=%s AND time_out IS NULL", (time_now, admin_username))
+        # Close any unclosed shifts first (e.g. crash or browser close)
+        cur2.execute("""
+            UPDATE admin_dtr SET time_out=%s, shift_ts_out=%s
+            WHERE admin_username=%s AND time_out IS NULL
+        """, (time_now, ts_now, admin_username))
         # Open new shift
-        cur2.execute("INSERT INTO admin_dtr (admin_username, date, time_in) VALUES (%s,%s,%s)",
-            (admin_username, today, time_now))
+        cur2.execute("""
+            INSERT INTO admin_dtr (admin_username, date, time_in, shift_ts_in)
+            VALUES (%s, %s, %s, %s)
+        """, (admin_username, today, time_now, ts_now))
         conn2.commit()
-        shift_id = cur2.lastrowid if cur2.lastrowid else None
-        # Get shift_id via SELECT since lastrowid may not work with psycopg2
         cur2.execute("SELECT id FROM admin_dtr WHERE admin_username=%s AND time_out IS NULL ORDER BY id DESC LIMIT 1", (admin_username,))
         row = cur2.fetchone()
         shift_id = row[0] if row else None
         cur2.close(); conn2.close()
-    except Exception:
+    except Exception as e:
         shift_id = None
     return jsonify({"success": True, "username": admin_username, "role": role, "shift_id": shift_id})
 
@@ -574,7 +579,7 @@ def stats():
     shift_id = request.args.get("shift_id")
     shift_start = None
     if shift_id:
-        cur.execute("SELECT time_in FROM admin_dtr WHERE id=%s AND time_out IS NULL", (shift_id,))
+        cur.execute("SELECT shift_ts_in FROM admin_dtr WHERE id=%s AND time_out IS NULL", (shift_id,))
         row = cur.fetchone()
         if row:
             shift_start = row[0]
@@ -679,195 +684,194 @@ def report_excel():
         from openpyxl.utils import get_column_letter
     except ImportError:
         return error("openpyxl not installed.", 500)
-
-    year = request.args.get("year", datetime.now(PHT).strftime("%Y"))
-    month = request.args.get("month", datetime.now(PHT).strftime("%m")).zfill(2)
-    month_str = f"{year}-{month}"
     try:
-        month_name = datetime.strptime(month_str, "%Y-%m").strftime("%B %Y")
-    except ValueError:
-        return error("Invalid year/month.")
+        year = request.args.get("year", datetime.now(PHT).strftime("%Y"))
+        month = request.args.get("month", datetime.now(PHT).strftime("%m")).zfill(2)
+        month_str = f"{year}-{month}"
+        try:
+            month_name = datetime.strptime(month_str, "%Y-%m").strftime("%B %Y")
+        except ValueError:
+            return error("Invalid year/month.")
 
-    conn = get_db()
-    cur = conn.cursor()
+        conn = get_db()
+        cur = conn.cursor()
 
-    cur.execute("SELECT * FROM members WHERE TO_CHAR(start_date::date,'YYYY-MM')=%s", (month_str,))
-    new_members = rows_to_list(cur.fetchall(), cur)
+        cur.execute("SELECT * FROM members WHERE TO_CHAR(start_date::date,'YYYY-MM')=%s", (month_str,))
+        new_members = rows_to_list(cur.fetchall(), cur)
 
-    cur.execute("SELECT * FROM members ORDER BY name ASC")
-    all_members = rows_to_list(cur.fetchall(), cur)
+        cur.execute("SELECT * FROM members ORDER BY name ASC")
+        all_members = rows_to_list(cur.fetchall(), cur)
 
-    cur.execute("SELECT * FROM members WHERE expiration_date >= TO_CHAR(CURRENT_DATE, 'YYYY-MM-DD')")
-    active_members = rows_to_list(cur.fetchall(), cur)
+        cur.execute("SELECT * FROM members WHERE expiration_date >= TO_CHAR(CURRENT_DATE, 'YYYY-MM-DD')")
+        active_members = rows_to_list(cur.fetchall(), cur)
 
-    cur.execute("SELECT * FROM walkins WHERE TO_CHAR(date::date,'YYYY-MM')=%s ORDER BY date ASC", (month_str,))
-    walkins = rows_to_list(cur.fetchall(), cur)
+        cur.execute("SELECT * FROM walkins WHERE TO_CHAR(date::date,'YYYY-MM')=%s ORDER BY date ASC", (month_str,))
+        walkins = rows_to_list(cur.fetchall(), cur)
 
-    cur.execute("""
-        SELECT a.*, m.plan FROM attendance a
-        LEFT JOIN members m ON a.member_id = m.id
-        WHERE TO_CHAR(a.date::date,'YYYY-MM') = %s
-        ORDER BY a.date ASC, a.time_in ASC
-    """, (month_str,))
-    attendance = rows_to_list(cur.fetchall(), cur)
-    cur.close()
-    conn.close()
+        cur.execute("""
+            SELECT a.*, m.plan FROM attendance a
+            LEFT JOIN members m ON a.member_id = m.id
+            WHERE TO_CHAR(a.date::date,'YYYY-MM') = %s
+            ORDER BY a.date ASC, a.time_in ASC
+        """, (month_str,))
+        attendance = rows_to_list(cur.fetchall(), cur)
+        cur.close()
+        conn.close()
 
-    member_revenue = sum((r["price"] - r["price"] * r["discount"] / 100) for r in new_members)
-    walkin_revenue = sum(r["amount"] for r in walkins)
-    total_revenue = member_revenue + walkin_revenue
+        member_revenue = sum((r["price"] - r["price"] * r["discount"] / 100) for r in new_members)
+        walkin_revenue = sum(r["amount"] for r in walkins)
+        total_revenue = member_revenue + walkin_revenue
 
-    DARK = "1a1a1a"; YELLOW = "E8FF00"; HEADER_BG = "2a2a2a"
-    WHITE = "F0F0F0"; GREEN = "00E676"; MUTED = "888888"; ROW_ALT = "1f1f1f"
-    thin = Side(style="thin", color="2a2a2a")
-    border = Border(left=thin, right=thin, top=thin, bottom=thin)
+        DARK = "1a1a1a"; YELLOW = "E8FF00"; HEADER_BG = "2a2a2a"
+        WHITE = "F0F0F0"; GREEN = "00E676"; MUTED = "888888"; ROW_ALT = "1f1f1f"
+        thin = Side(style="thin", color="2a2a2a")
+        border = Border(left=thin, right=thin, top=thin, bottom=thin)
 
-    wb = openpyxl.Workbook()
+        wb = openpyxl.Workbook()
 
-    def style_header_row(ws, row, cols, bg=HEADER_BG, fg=YELLOW):
-        for col in range(1, cols + 1):
-            cell = ws.cell(row=row, column=col)
-            cell.font = Font(bold=True, color=fg, name="Arial", size=10)
-            cell.fill = PatternFill("solid", start_color=bg)
-            cell.alignment = Alignment(horizontal="center", vertical="center")
-            cell.border = border
+        def style_header_row(ws, row, cols, bg=HEADER_BG, fg=YELLOW):
+            for col in range(1, cols + 1):
+                cell = ws.cell(row=row, column=col)
+                cell.font = Font(bold=True, color=fg, name="Arial", size=10)
+                cell.fill = PatternFill("solid", start_color=bg)
+                cell.alignment = Alignment(horizontal="center", vertical="center")
+                cell.border = border
 
-    def style_data_row(ws, row, cols, alt=False):
-        for col in range(1, cols + 1):
-            cell = ws.cell(row=row, column=col)
-            cell.font = Font(color=WHITE, name="Arial", size=9)
-            cell.fill = PatternFill("solid", start_color=ROW_ALT if alt else DARK)
-            cell.alignment = Alignment(vertical="center")
-            cell.border = border
+        def style_data_row(ws, row, cols, alt=False):
+            for col in range(1, cols + 1):
+                cell = ws.cell(row=row, column=col)
+                cell.font = Font(color=WHITE, name="Arial", size=9)
+                cell.fill = PatternFill("solid", start_color=ROW_ALT if alt else DARK)
+                cell.alignment = Alignment(vertical="center")
+                cell.border = border
 
-    def fill_bg(ws, max_row, max_col):
-        for row in ws.iter_rows(min_row=1, max_row=max_row, min_col=1, max_col=max_col):
-            for cell in row:
-                cell.fill = PatternFill("solid", start_color=DARK)
+        def fill_bg(ws, max_row, max_col):
+            for row in ws.iter_rows(min_row=1, max_row=max_row, min_col=1, max_col=max_col):
+                for cell in row:
+                    cell.fill = PatternFill("solid", start_color=DARK)
 
-    def set_col_widths(ws, widths):
-        for i, w in enumerate(widths, 1):
-            ws.column_dimensions[get_column_letter(i)].width = w
+        def set_col_widths(ws, widths):
+            for i, w in enumerate(widths, 1):
+                ws.column_dimensions[get_column_letter(i)].width = w
 
-    def sheet_title(ws, row, cols, text):
-        ws.merge_cells(f"A{row}:{get_column_letter(cols)}{row}")
-        c = ws[f"A{row}"]
-        c.value = text
-        c.font = Font(bold=True, color=YELLOW, name="Arial", size=14)
+        def sheet_title(ws, row, cols, text):
+            ws.merge_cells(f"A{row}:{get_column_letter(cols)}{row}")
+            c = ws[f"A{row}"]
+            c.value = text
+            c.font = Font(bold=True, color=YELLOW, name="Arial", size=14)
+            c.alignment = Alignment(horizontal="center", vertical="center")
+            c.fill = PatternFill("solid", start_color=DARK)
+            ws.row_dimensions[row].height = 28
+
+        ws1 = wb.active
+        ws1.title = "Summary"
+        ws1.sheet_view.showGridLines = False
+        fill_bg(ws1, 60, 10)
+        ws1.merge_cells("A1:H1")
+        c = ws1["A1"]
+        c.value = "LOYD'S FITNESS GYM"
+        c.font = Font(bold=True, color=YELLOW, name="Arial", size=22)
         c.alignment = Alignment(horizontal="center", vertical="center")
         c.fill = PatternFill("solid", start_color=DARK)
-        ws.row_dimensions[row].height = 28
+        ws1.row_dimensions[1].height = 40
+        ws1.merge_cells("A2:H2")
+        c = ws1["A2"]
+        c.value = f"Monthly Report — {month_name}"
+        c.font = Font(color=WHITE, name="Arial", size=13)
+        c.alignment = Alignment(horizontal="center", vertical="center")
+        c.fill = PatternFill("solid", start_color=DARK)
+        ws1.row_dimensions[2].height = 24
 
-    ws1 = wb.active
-    ws1.title = "Summary"
-    ws1.sheet_view.showGridLines = False
-    fill_bg(ws1, 60, 10)
-    ws1.merge_cells("A1:H1")
-    c = ws1["A1"]
-    c.value = "LOYD'S FITNESS GYM"
-    c.font = Font(bold=True, color=YELLOW, name="Arial", size=22)
-    c.alignment = Alignment(horizontal="center", vertical="center")
-    c.fill = PatternFill("solid", start_color=DARK)
-    ws1.row_dimensions[1].height = 40
-    ws1.merge_cells("A2:H2")
-    c = ws1["A2"]
-    c.value = f"Monthly Report — {month_name}"
-    c.font = Font(color=WHITE, name="Arial", size=13)
-    c.alignment = Alignment(horizontal="center", vertical="center")
-    c.fill = PatternFill("solid", start_color=DARK)
-    ws1.row_dimensions[2].height = 24
+        kpis = [
+            ("TOTAL MEMBERS", len(all_members), WHITE),
+            ("ACTIVE MEMBERS", len(active_members), GREEN),
+            ("NEW THIS MONTH", len(new_members), YELLOW),
+            ("WALK-INS", len(walkins), "00B0FF"),
+            ("ATTENDANCE LOGS", len(attendance), "FF9100"),
+            ("MEMBER REVENUE", f"₱{member_revenue:,.2f}", GREEN),
+            ("WALKIN REVENUE", f"₱{walkin_revenue:,.2f}", YELLOW),
+            ("TOTAL REVENUE", f"₱{total_revenue:,.2f}", "FF4D00"),
+        ]
+        for col, (label, value, color) in enumerate(kpis, 1):
+            lc = ws1.cell(row=5, column=col, value=label)
+            lc.font = Font(color=MUTED, name="Arial", size=8, bold=True)
+            lc.fill = PatternFill("solid", start_color=HEADER_BG)
+            lc.alignment = Alignment(horizontal="center", vertical="center")
+            lc.border = border
+            vc = ws1.cell(row=6, column=col, value=value)
+            vc.font = Font(bold=True, color=color, name="Arial", size=14)
+            vc.fill = PatternFill("solid", start_color=HEADER_BG)
+            vc.alignment = Alignment(horizontal="center", vertical="center")
+            vc.border = border
+        set_col_widths(ws1, [4, 20, 22, 14, 12, 8, 12, 10, 12, 12])
 
-    kpis = [
-        ("TOTAL MEMBERS", len(all_members), WHITE),
-        ("ACTIVE MEMBERS", len(active_members), GREEN),
-        ("NEW THIS MONTH", len(new_members), YELLOW),
-        ("WALK-INS", len(walkins), "00B0FF"),
-        ("ATTENDANCE LOGS", len(attendance), "FF9100"),
-        ("MEMBER REVENUE", f"₱{member_revenue:,.2f}", GREEN),
-        ("WALKIN REVENUE", f"₱{walkin_revenue:,.2f}", YELLOW),
-        ("TOTAL REVENUE", f"₱{total_revenue:,.2f}", "FF4D00"),
-    ]
-    for col, (label, value, color) in enumerate(kpis, 1):
-        lc = ws1.cell(row=5, column=col, value=label)
-        lc.font = Font(color=MUTED, name="Arial", size=8, bold=True)
-        lc.fill = PatternFill("solid", start_color=HEADER_BG)
-        lc.alignment = Alignment(horizontal="center", vertical="center")
-        lc.border = border
-        vc = ws1.cell(row=6, column=col, value=value)
-        vc.font = Font(bold=True, color=color, name="Arial", size=14)
-        vc.fill = PatternFill("solid", start_color=HEADER_BG)
-        vc.alignment = Alignment(horizontal="center", vertical="center")
-        vc.border = border
-    set_col_widths(ws1, [4, 20, 22, 14, 12, 8, 12, 10, 12, 12])
+        ws2 = wb.create_sheet("All Members")
+        ws2.sheet_view.showGridLines = False
+        fill_bg(ws2, len(all_members) + 10, 11)
+        sheet_title(ws2, 1, 11, f"ALL MEMBERS — {month_name}")
+        h2 = ["#", "Name", "Email", "Phone", "Plan", "Months", "Net Price (₱)", "Discount %", "Start Date", "Expiration", "Status"]
+        for i, h in enumerate(h2, 1):
+            ws2.cell(row=2, column=i, value=h)
+        style_header_row(ws2, 2, len(h2))
+        today_str = datetime.now(PHT).strftime("%Y-%m-%d")
+        for idx, m in enumerate(all_members):
+            r = 3 + idx
+            net = m["price"] - (m["price"] * m["discount"] / 100)
+            exp = m["expiration_date"]
+            days_left = (datetime.strptime(exp, "%Y-%m-%d") - datetime.now(PHT)).days
+            if exp < today_str: status, color = "Expired", "FF1744"
+            elif days_left <= 7: status, color = "Expiring Soon", "FFB300"
+            else: status, color = "Active", GREEN
+            for c, val in enumerate([idx+1, m["name"], m["email"], m["phone"], m["plan"],
+                                      m["months"], round(net, 2), f'{m["discount"]}%',
+                                      m["start_date"], exp, status], 1):
+                ws2.cell(row=r, column=c, value=val)
+            style_data_row(ws2, r, len(h2), alt=idx % 2 == 1)
+            ws2.cell(row=r, column=11).font = Font(color=color, name="Arial", size=9, bold=True)
+        set_col_widths(ws2, [4, 20, 22, 14, 12, 8, 14, 10, 12, 12, 14])
 
-    ws2 = wb.create_sheet("All Members")
-    ws2.sheet_view.showGridLines = False
-    fill_bg(ws2, len(all_members) + 10, 11)
-    sheet_title(ws2, 1, 11, f"ALL MEMBERS — {month_name}")
-    h2 = ["#", "Name", "Email", "Phone", "Plan", "Months", "Net Price (₱)", "Discount %", "Start Date", "Expiration", "Status"]
-    for i, h in enumerate(h2, 1):
-        ws2.cell(row=2, column=i, value=h)
-    style_header_row(ws2, 2, len(h2))
-    today_str = datetime.now(PHT).strftime("%Y-%m-%d")
-    for idx, m in enumerate(all_members):
-        r = 3 + idx
-        net = m["price"] - (m["price"] * m["discount"] / 100)
-        exp = m["expiration_date"]
-        days_left = (datetime.strptime(exp, "%Y-%m-%d") - datetime.now(PHT)).days
-        if exp < today_str: status, color = "Expired", "FF1744"
-        elif days_left <= 7: status, color = "Expiring Soon", "FFB300"
-        else: status, color = "Active", GREEN
-        for c, val in enumerate([idx+1, m["name"], m["email"], m["phone"], m["plan"],
-                                  m["months"], round(net, 2), f'{m["discount"]}%',
-                                  m["start_date"], exp, status], 1):
-            ws2.cell(row=r, column=c, value=val)
-        style_data_row(ws2, r, len(h2), alt=idx % 2 == 1)
-        ws2.cell(row=r, column=11).font = Font(color=color, name="Arial", size=9, bold=True)
-    set_col_widths(ws2, [4, 20, 22, 14, 12, 8, 14, 10, 12, 12, 14])
+        ws3 = wb.create_sheet("Walk-ins")
+        ws3.sheet_view.showGridLines = False
+        fill_bg(ws3, len(walkins) + 10, 5)
+        sheet_title(ws3, 1, 5, f"WALK-IN REVENUE — {month_name}")
+        h3 = ["#", "Name", "Amount (₱)", "Note", "Date"]
+        for i, h in enumerate(h3, 1):
+            ws3.cell(row=2, column=i, value=h)
+        style_header_row(ws3, 2, len(h3))
+        for idx, w in enumerate(walkins):
+            r = 3 + idx
+            for c, val in enumerate([idx+1, w["name"], w["amount"], w["note"] or "—", w["date"]], 1):
+                ws3.cell(row=r, column=c, value=val)
+            style_data_row(ws3, r, len(h3), alt=idx % 2 == 1)
+        set_col_widths(ws3, [4, 22, 14, 24, 14])
 
-    ws3 = wb.create_sheet("Walk-ins")
-    ws3.sheet_view.showGridLines = False
-    fill_bg(ws3, len(walkins) + 10, 5)
-    sheet_title(ws3, 1, 5, f"WALK-IN REVENUE — {month_name}")
-    h3 = ["#", "Name", "Amount (₱)", "Note", "Date"]
-    for i, h in enumerate(h3, 1):
-        ws3.cell(row=2, column=i, value=h)
-    style_header_row(ws3, 2, len(h3))
-    for idx, w in enumerate(walkins):
-        r = 3 + idx
-        for c, val in enumerate([idx+1, w["name"], w["amount"], w["note"] or "—", w["date"]], 1):
-            ws3.cell(row=r, column=c, value=val)
-        style_data_row(ws3, r, len(h3), alt=idx % 2 == 1)
-    set_col_widths(ws3, [4, 22, 14, 24, 14])
+        ws4 = wb.create_sheet("Attendance")
+        ws4.sheet_view.showGridLines = False
+        fill_bg(ws4, len(attendance) + 10, 7)
+        sheet_title(ws4, 1, 7, f"ATTENDANCE LOG — {month_name}")
+        h4 = ["#", "Member", "Plan", "Date", "Time In", "Time Out", "Status"]
+        for i, h in enumerate(h4, 1):
+            ws4.cell(row=2, column=i, value=h)
+        style_header_row(ws4, 2, len(h4))
+        for idx, a in enumerate(attendance):
+            r = 3 + idx
+            status = "Inside" if not a["time_out"] else "Left"
+            for c, val in enumerate([idx+1, a["member_name"], a.get("plan") or "—",
+                                      a["date"], a["time_in"], a["time_out"] or "—", status], 1):
+                ws4.cell(row=r, column=c, value=val)
+            style_data_row(ws4, r, len(h4), alt=idx % 2 == 1)
+            ws4.cell(row=r, column=7).font = Font(color=GREEN if status == "Inside" else "FF1744", name="Arial", size=9, bold=True)
+        set_col_widths(ws4, [4, 22, 14, 12, 12, 12, 10])
 
-    ws4 = wb.create_sheet("Attendance")
-    ws4.sheet_view.showGridLines = False
-    fill_bg(ws4, len(attendance) + 10, 7)
-    sheet_title(ws4, 1, 7, f"ATTENDANCE LOG — {month_name}")
-    h4 = ["#", "Member", "Plan", "Date", "Time In", "Time Out", "Status"]
-    for i, h in enumerate(h4, 1):
-        ws4.cell(row=2, column=i, value=h)
-    style_header_row(ws4, 2, len(h4))
-    for idx, a in enumerate(attendance):
-        r = 3 + idx
-        status = "Inside" if not a["time_out"] else "Left"
-        for c, val in enumerate([idx+1, a["member_name"], a.get("plan") or "—",
-                                  a["date"], a["time_in"], a["time_out"] or "—", status], 1):
-            ws4.cell(row=r, column=c, value=val)
-        style_data_row(ws4, r, len(h4), alt=idx % 2 == 1)
-        ws4.cell(row=r, column=7).font = Font(color=GREEN if status == "Inside" else "FF1744", name="Arial", size=9, bold=True)
-    set_col_widths(ws4, [4, 22, 14, 12, 12, 12, 10])
-
-    output = io.BytesIO()
-    wb.save(output)
-    output.seek(0)
-    filename = f"LoydsGym_Report_{month_name.replace(' ', '_')}.xlsx"
-    response = make_response(output.getvalue())
-    response.headers["Content-Disposition"] = f"attachment; filename={filename}"
-    response.headers["Content-Type"] = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-    return response
+        output = io.BytesIO()
+        wb.save(output)
+        output.seek(0)
+        filename = f"LoydsGym_Report_{month_name.replace(' ', '_')}.xlsx"
+        response = make_response(output.getvalue())
+        response.headers["Content-Disposition"] = f"attachment; filename={filename}"
+        response.headers["Content-Type"] = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        return response
     except Exception as ex:
-        import traceback
         return error(f"Error generating report: {str(ex)}", 500)
 
 
@@ -904,10 +908,10 @@ def get_shifts():
             summary[u] = {"admin": u, "total_shifts": 0, "total_revenue": 0.0, "total_hours": 0.0}
         summary[u]["total_shifts"] += 1
         summary[u]["total_revenue"] += float(r["shift_revenue"] or 0)
-        if r["time_in"] and r["time_out"]:
+        if r.get("shift_ts_in") and r.get("shift_ts_out"):
             try:
-                ti = datetime.strptime(str(r["time_in"])[:19], "%Y-%m-%d %H:%M:%S")
-                to = datetime.strptime(str(r["time_out"])[:19], "%Y-%m-%d %H:%M:%S")
+                ti = datetime.strptime(str(r["shift_ts_in"])[:19], "%Y-%m-%d %H:%M:%S")
+                to = datetime.strptime(str(r["shift_ts_out"])[:19], "%Y-%m-%d %H:%M:%S")
                 summary[u]["total_hours"] += round((to - ti).seconds / 3600, 2)
             except Exception:
                 pass
@@ -1029,29 +1033,32 @@ def logout():
     shift_id = data.get("shift_id")
     if not username:
         return jsonify({"message": "Logged out"})
-    now_str = datetime.now(PHT).strftime("%Y-%m-%d %H:%M:%S")
+    time_now  = datetime.now(PHT).strftime("%I:%M %p")
+    ts_now    = datetime.now(PHT).strftime("%Y-%m-%d %H:%M:%S")
     conn = get_db(); cur = conn.cursor()
     # Find the open shift
     if shift_id:
-        cur.execute("SELECT id, time_in FROM admin_dtr WHERE id=%s AND time_out IS NULL", (shift_id,))
+        cur.execute("SELECT id, shift_ts_in FROM admin_dtr WHERE id=%s AND time_out IS NULL", (shift_id,))
     else:
-        cur.execute("SELECT id, time_in FROM admin_dtr WHERE admin_username=%s AND time_out IS NULL ORDER BY id DESC LIMIT 1", (username,))
+        cur.execute("SELECT id, shift_ts_in FROM admin_dtr WHERE admin_username=%s AND time_out IS NULL ORDER BY id DESC LIMIT 1", (username,))
     record = cur.fetchone()
     shift_revenue = 0
     if record:
-        open_id   = record[0]
-        time_in   = record[1]
+        open_id  = record[0]
+        ts_in    = record[1]
         # Calculate walk-in revenue collected during this shift
         try:
             cur.execute("""
                 SELECT COALESCE(SUM(amount),0) FROM walkins
                 WHERE created_at >= %s AND created_at <= %s
-            """, (time_in, now_str))
+            """, (ts_in, ts_now))
             shift_revenue = float(cur.fetchone()[0] or 0)
         except Exception:
             shift_revenue = 0
-        cur.execute("UPDATE admin_dtr SET time_out=%s, shift_revenue=%s WHERE id=%s",
-            (now_str, shift_revenue, open_id))
+        cur.execute("""
+            UPDATE admin_dtr SET time_out=%s, shift_ts_out=%s, shift_revenue=%s
+            WHERE id=%s
+        """, (time_now, ts_now, shift_revenue, open_id))
         conn.commit()
     cur.close(); conn.close()
     log_activity(username, "LOGOUT", f"Admin logged out. Shift revenue: P{shift_revenue:,.2f}")
