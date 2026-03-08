@@ -7,7 +7,7 @@ const NAV_LINKS = [
   { to: "/walkins",    icon: "🚶", label: "Walk-ins" },
   { to: "/alerts",     icon: "🔔", label: "Alerts" },
   { to: "/reports",    icon: "📊", label: "Reports" },
-  { to: "/dtr",        icon: "🗓", label: "Employee DTR" },
+  { to: "/dtr",        icon: "📋", label: "Employee DTR" },
 ];
 
 function Layout({ children }) {
