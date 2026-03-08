@@ -1,6 +1,6 @@
 import { useEffect, useState, useCallback, useRef } from "react";
 import { Link } from "react-router-dom";
-import { api, clearCache } from "../api/config";
+import { api, clearCache, getShiftId } from "../api/config";
 import Layout from "../components/Layout";
 
 const DEFAULT_STATS = {
@@ -13,32 +13,42 @@ function Dashboard() {
   const [expiring, setExpiring] = useState({ expiring_soon: [], expired: [] });
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState("");
-  const mounted = useRef(true);
+  const admin    = localStorage.getItem("gym_admin") || "Admin";
+  const shiftId  = getShiftId();
+  const mounted  = useRef(true);
   useEffect(() => { return () => { mounted.current = false; }; }, []);
 
   const fetchData = useCallback(async (force = false) => {
     if (force) clearCache();
     setError("");
     try {
-      const [s, e] = await Promise.all([api.get("/stats"), api.get("/expiring?days=7")]);
+      const params = shiftId ? { shift_id: shiftId } : {};
+      const [s, e] = await Promise.all([
+        api.get("/stats", { params }),
+        api.get("/expiring?days=7")
+      ]);
       if (!mounted.current) return;
-      setStats(s.data); setExpiring(e.data);
+      setStats(s.data);
+      setExpiring(e.data);
     } catch {
       if (!mounted.current) return;
       setError("Could not load dashboard data. Is the server running?");
     }
     setLoading(false);
-  }, []);
+  }, [shiftId]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
-  const fmt = (n) => Number(n || 0).toLocaleString();
+  const fmt    = (n) => Number(n || 0).toLocaleString("en-PH", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmtInt = (n) => Number(n || 0).toLocaleString();
 
   return (
     <Layout>
       <div className="page-header">
-        <h2>Dashboard</h2>
-        <p>Welcome back - here's what's happening today.</p>
+        <div>
+          <h2>Dashboard</h2>
+          <p>Welcome back, <strong style={{ color:"var(--accent)" }}>{admin}</strong> — your shift is active.</p>
+        </div>
       </div>
 
       {error && <div className="error-msg" style={{ marginBottom: 20 }}>{error}</div>}
@@ -46,52 +56,61 @@ function Dashboard() {
       <div className="stats-grid">
         <div className="stat-card">
           <div className="stat-label">Total Members</div>
-          <div className="stat-value yellow">{loading ? "-" : fmt(stats.total_members)}</div>
+          <div className="stat-value yellow">{loading ? "-" : fmtInt(stats.total_members)}</div>
           <div className="stat-sub">All time registrations</div>
         </div>
         <div className="stat-card">
           <div className="stat-label">Active Members</div>
-          <div className="stat-value green">{loading ? "-" : fmt(stats.active_members)}</div>
+          <div className="stat-value green">{loading ? "-" : fmtInt(stats.active_members)}</div>
           <div className="stat-sub">Current subscriptions</div>
         </div>
         <div className="stat-card">
           <div className="stat-label">Total Revenue</div>
-          <div className="stat-value" style={{ fontSize: 34 }}>{loading ? "-" : "P" + fmt(stats.revenue)}</div>
-          <div className="stat-sub">After discounts</div>
+          <div className="stat-value" style={{ fontSize:30 }}>{loading ? "-" : "P" + fmt(stats.revenue)}</div>
+          <div className="stat-sub">All-time membership revenue</div>
         </div>
         <div className="stat-card">
           <div className="stat-label">New This Month</div>
-          <div className="stat-value" style={{ color: "#00b0ff" }}>{loading ? "-" : fmt(stats.new_this_month)}</div>
+          <div className="stat-value" style={{ color:"#00b0ff" }}>{loading ? "-" : fmtInt(stats.new_this_month)}</div>
           <div className="stat-sub">Recent sign-ups</div>
         </div>
       </div>
 
       <div className="two-col">
-        <div className="card" style={{ borderColor:"rgba(232,255,0,0.2)", background:"linear-gradient(135deg,#1a1a1a 0%,#1f1f0a 100%)" }}>
-          <div className="dash-inner">
-            <div>
-              <div className="stat-label">Walk-in Revenue Today</div>
-              <div className="stat-value yellow" style={{ fontSize: 44 }}>{loading ? "-" : "P" + fmt(stats.walkin_revenue_today)}</div>
-              <div className="stat-sub">{loading ? "" : stats.walkin_count_today + " walk-in" + (stats.walkin_count_today !== 1 ? "s" : "")}</div>
-            </div>
-            <Link to="/walkins" className="btn btn-primary btn-sm">Manage</Link>
+        {/* Shift Walk-in Revenue */}
+        <div className="card" style={{ borderColor:"rgba(232,255,0,0.3)", background:"linear-gradient(135deg,#1a1a1a 0%,#1f1f0a 100%)" }}>
+          <div className="stat-label" style={{ marginBottom:4 }}>
+            Walk-in Revenue — This Shift
           </div>
+          <div className="stat-value yellow" style={{ fontSize:44, marginBottom:4 }}>
+            {loading ? "-" : "P" + fmt(stats.walkin_revenue_today)}
+          </div>
+          <div className="stat-sub" style={{ marginBottom:16 }}>
+            {loading ? "" : `${fmtInt(stats.walkin_count_today)} walk-in${stats.walkin_count_today !== 1 ? "s" : ""} recorded this shift`}
+          </div>
+          <div style={{ fontSize:11, color:"var(--muted)", marginBottom:16 }}>
+            Resets to zero on next admin login
+          </div>
+          <Link to="/walkins" className="btn btn-primary btn-sm">Record Walk-in</Link>
         </div>
+
+        {/* Members in gym */}
         <div className="card" style={{ borderColor:"rgba(0,230,118,0.2)", background:"linear-gradient(135deg,#1a1a1a 0%,#0a1f12 100%)" }}>
-          <div className="dash-inner">
-            <div>
-              <div className="stat-label">Members In Gym Now</div>
-              <div className="stat-value green" style={{ fontSize: 44 }}>{loading ? "-" : stats.members_in_gym}</div>
-              <div className="stat-sub">{loading ? "" : stats.visits_today + " total visits today"}</div>
-            </div>
-            <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-              <Link to="/attendance" className="btn btn-success btn-sm">Member Time In</Link>
-              <Link to="/attendance" className="btn btn-danger btn-sm">Member Time Out</Link>
-            </div>
+          <div className="stat-label" style={{ marginBottom:4 }}>Members In Gym Now</div>
+          <div className="stat-value green" style={{ fontSize:44, marginBottom:4 }}>
+            {loading ? "-" : fmtInt(stats.members_in_gym)}
+          </div>
+          <div className="stat-sub" style={{ marginBottom:16 }}>
+            {loading ? "" : `${fmtInt(stats.visits_today)} total visits today`}
+          </div>
+          <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
+            <Link to="/attendance" className="btn btn-success btn-sm">Time In</Link>
+            <Link to="/attendance" className="btn btn-danger btn-sm">Time Out</Link>
           </div>
         </div>
       </div>
 
+      {/* Expiring */}
       <div className="two-col">
         <div className="card">
           <div className="dash-section-header">
@@ -103,7 +122,8 @@ function Dashboard() {
             : <div className="table-wrap"><table>
                 <thead><tr><th>Name</th><th>Plan</th><th>Expires</th></tr></thead>
                 <tbody>{expiring.expiring_soon.map(m => (
-                  <tr key={m.id}><td style={{fontWeight:600}}>{m.name}</td><td>{m.plan}</td><td><span className="badge badge-expiring">{m.expiration_date}</span></td></tr>
+                  <tr key={m.id}><td style={{fontWeight:600}}>{m.name}</td><td>{m.plan}</td>
+                  <td><span className="badge badge-expiring">{m.expiration_date}</span></td></tr>
                 ))}</tbody>
               </table></div>
           }
@@ -116,9 +136,10 @@ function Dashboard() {
           {expiring.expired.length === 0
             ? <div className="empty-state">No expired memberships</div>
             : <div className="table-wrap"><table>
-                <thead><tr><th>Name</th><th>Plan</th><th>Expired On</th></tr></thead>
+                <thead><tr><th>Name</th><th>Plan</th><th>Expired</th></tr></thead>
                 <tbody>{expiring.expired.map(m => (
-                  <tr key={m.id}><td style={{fontWeight:600}}>{m.name}</td><td>{m.plan}</td><td><span className="badge badge-expired">{m.expiration_date}</span></td></tr>
+                  <tr key={m.id}><td style={{fontWeight:600}}>{m.name}</td><td>{m.plan}</td>
+                  <td><span className="badge badge-expired">{m.expiration_date}</span></td></tr>
                 ))}</tbody>
               </table></div>
           }
@@ -126,9 +147,8 @@ function Dashboard() {
       </div>
 
       <div className="action-row">
-        <Link to="/members" className="btn btn-primary">Manage Members</Link>
-        <Link to="/dtr"     className="btn btn-ghost">Employee DTR</Link>
-        <Link to="/alerts"  className="btn btn-ghost">View All Alerts</Link>
+        <Link to="/members"    className="btn btn-primary">Manage Members</Link>
+        <Link to="/alerts"     className="btn btn-ghost">View Alerts</Link>
         <button className="btn btn-ghost" onClick={() => fetchData(true)} disabled={loading}>Refresh</button>
       </div>
     </Layout>

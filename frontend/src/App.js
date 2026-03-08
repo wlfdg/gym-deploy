@@ -8,7 +8,6 @@ const Alerts      = lazy(() => import("./pages/Alerts"));
 const Walkins     = lazy(() => import("./pages/Walkins"));
 const Attendance  = lazy(() => import("./pages/Attendance"));
 const Reports     = lazy(() => import("./pages/Reports"));
-const EmployeeDTR = lazy(() => import("./pages/EmployeeDTR"));
 
 function Loader() {
   return (
@@ -35,7 +34,6 @@ function App() {
           <Route path="/walkins"    element={<PrivateRoute><Walkins /></PrivateRoute>} />
           <Route path="/alerts"     element={<PrivateRoute><Alerts /></PrivateRoute>} />
           <Route path="/reports"    element={<PrivateRoute><Reports /></PrivateRoute>} />
-          <Route path="/dtr"        element={<PrivateRoute><EmployeeDTR /></PrivateRoute>} />
           <Route path="*"           element={<Navigate to="/dashboard" replace />} />
         </Routes>
       </Suspense>

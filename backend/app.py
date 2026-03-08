@@ -90,20 +90,26 @@ def login():
     if status == "disabled":
         return error("Your account has been disabled. Contact the primary admin.", 403)
     log_activity(admin_username, "LOGIN", f"Logged in")
-    # Auto time-in on login
+    # Auto time-in: record shift start in admin_dtr
     try:
         today    = datetime.now(PHT).strftime("%Y-%m-%d")
-        time_now = datetime.now(PHT).strftime("%I:%M %p")
+        time_now = datetime.now(PHT).strftime("%Y-%m-%d %H:%M:%S")
         conn2 = get_db(); cur2 = conn2.cursor()
-        cur2.execute("SELECT id FROM employee_dtr WHERE employee_name=%s AND date=%s AND time_out IS NULL", (admin_username, today))
-        if not cur2.fetchone():
-            cur2.execute("INSERT INTO employee_dtr (employee_name, date, time_in, note, recorded_by) VALUES (%s,%s,%s,%s,%s)",
-                (admin_username, today, time_now, "Auto - Login", "system"))
-            conn2.commit()
+        # Close any unclosed shifts first (e.g. crash/browser close)
+        cur2.execute("UPDATE admin_dtr SET time_out=%s WHERE admin_username=%s AND time_out IS NULL", (time_now, admin_username))
+        # Open new shift
+        cur2.execute("INSERT INTO admin_dtr (admin_username, date, time_in) VALUES (%s,%s,%s)",
+            (admin_username, today, time_now))
+        conn2.commit()
+        shift_id = cur2.lastrowid if cur2.lastrowid else None
+        # Get shift_id via SELECT since lastrowid may not work with psycopg2
+        cur2.execute("SELECT id FROM admin_dtr WHERE admin_username=%s AND time_out IS NULL ORDER BY id DESC LIMIT 1", (admin_username,))
+        row = cur2.fetchone()
+        shift_id = row[0] if row else None
         cur2.close(); conn2.close()
     except Exception:
-        pass
-    return jsonify({"success": True, "username": admin_username, "role": role})
+        shift_id = None
+    return jsonify({"success": True, "username": admin_username, "role": role, "shift_id": shift_id})
 
 
 @app.route("/register", methods=["POST"])
@@ -521,7 +527,7 @@ def add_walkin():
     conn = get_db()
     cur = conn.cursor()
     cur.execute(
-        "INSERT INTO walkins (name, amount, note, date) VALUES (%s, %s, %s, %s)",
+        "INSERT INTO walkins (name, amount, note, date, created_at) VALUES (%s, %s, %s, %s, %s)",
         (data["name"].strip(), amount, data.get("note", "").strip(), date)
     )
     conn.commit()
@@ -564,11 +570,24 @@ def stats():
     )
     new_this_month = cur.fetchone()[0]
 
-    cur.execute("SELECT COALESCE(SUM(amount), 0) FROM walkins WHERE date=%s", (today,))
-    walkin_today = cur.fetchone()[0]
-
-    cur.execute("SELECT COUNT(*) FROM walkins WHERE date=%s", (today,))
-    walkin_count = cur.fetchone()[0]
+    # Shift-scoped walk-in revenue: only count walkins from this admin's current shift login time
+    shift_id = request.args.get("shift_id")
+    shift_start = None
+    if shift_id:
+        cur.execute("SELECT time_in FROM admin_dtr WHERE id=%s AND time_out IS NULL", (shift_id,))
+        row = cur.fetchone()
+        if row:
+            shift_start = row[0]
+    if shift_start:
+        cur.execute("SELECT COALESCE(SUM(amount),0) FROM walkins WHERE created_at >= %s", (shift_start,))
+        walkin_today = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM walkins WHERE created_at >= %s", (shift_start,))
+        walkin_count = cur.fetchone()[0]
+    else:
+        cur.execute("SELECT COALESCE(SUM(amount), 0) FROM walkins WHERE date=%s", (today,))
+        walkin_today = cur.fetchone()[0]
+        cur.execute("SELECT COUNT(*) FROM walkins WHERE date=%s", (today,))
+        walkin_count = cur.fetchone()[0]
 
     cur.execute("SELECT COUNT(*) FROM attendance WHERE date=%s AND time_out IS NULL", (today,))
     members_in_gym = cur.fetchone()[0]
@@ -852,6 +871,50 @@ def report_excel():
         return error(f"Error generating report: {str(ex)}", 500)
 
 
+
+@app.route("/shifts", methods=["GET"])
+def get_shifts():
+    month = request.args.get("month", datetime.now(PHT).strftime("%m"))
+    year  = request.args.get("year",  datetime.now(PHT).strftime("%Y"))
+    admin = request.args.get("admin", "")
+    prefix = f"{year}-{month.zfill(2)}"
+    conn = get_db(); cur = conn.cursor()
+    if admin:
+        cur.execute("""
+            SELECT id, admin_username, date, time_in, time_out,
+                   COALESCE(shift_revenue,0) as shift_revenue
+            FROM admin_dtr
+            WHERE date LIKE %s AND admin_username=%s
+            ORDER BY time_in DESC
+        """, (f"{prefix}%", admin))
+    else:
+        cur.execute("""
+            SELECT id, admin_username, date, time_in, time_out,
+                   COALESCE(shift_revenue,0) as shift_revenue
+            FROM admin_dtr
+            WHERE date LIKE %s
+            ORDER BY time_in DESC
+        """, (f"{prefix}%",))
+    rows = rows_to_list(cur.fetchall(), cur)
+    # Summary per admin
+    summary = {}
+    for r in rows:
+        u = r["admin_username"]
+        if u not in summary:
+            summary[u] = {"admin": u, "total_shifts": 0, "total_revenue": 0.0, "total_hours": 0.0}
+        summary[u]["total_shifts"] += 1
+        summary[u]["total_revenue"] += float(r["shift_revenue"] or 0)
+        if r["time_in"] and r["time_out"]:
+            try:
+                ti = datetime.strptime(str(r["time_in"])[:19], "%Y-%m-%d %H:%M:%S")
+                to = datetime.strptime(str(r["time_out"])[:19], "%Y-%m-%d %H:%M:%S")
+                summary[u]["total_hours"] += round((to - ti).seconds / 3600, 2)
+            except Exception:
+                pass
+    cur.close(); conn.close()
+    return jsonify({"shifts": rows, "summary": list(summary.values())})
+
+
 # ── Admin DTR ─────────────────────────────────────────────────────────────────
 
 @app.route("/admin/dtr/timein", methods=["POST"])
@@ -963,19 +1026,36 @@ def delete_admin_dtr(dtr_id):
 def logout():
     data     = request.json or {}
     username = data.get("username", "").strip()
+    shift_id = data.get("shift_id")
     if not username:
         return jsonify({"message": "Logged out"})
-    today    = datetime.now(PHT).strftime("%Y-%m-%d")
-    time_now = datetime.now(PHT).strftime("%I:%M %p")
+    now_str = datetime.now(PHT).strftime("%Y-%m-%d %H:%M:%S")
     conn = get_db(); cur = conn.cursor()
-    cur.execute("SELECT id FROM employee_dtr WHERE employee_name=%s AND date=%s AND time_out IS NULL", (username, today))
+    # Find the open shift
+    if shift_id:
+        cur.execute("SELECT id, time_in FROM admin_dtr WHERE id=%s AND time_out IS NULL", (shift_id,))
+    else:
+        cur.execute("SELECT id, time_in FROM admin_dtr WHERE admin_username=%s AND time_out IS NULL ORDER BY id DESC LIMIT 1", (username,))
     record = cur.fetchone()
+    shift_revenue = 0
     if record:
-        cur.execute("UPDATE employee_dtr SET time_out=%s, note=%s WHERE id=%s", (time_now, "Auto - Logout", record[0]))
+        open_id   = record[0]
+        time_in   = record[1]
+        # Calculate walk-in revenue collected during this shift
+        try:
+            cur.execute("""
+                SELECT COALESCE(SUM(amount),0) FROM walkins
+                WHERE created_at >= %s AND created_at <= %s
+            """, (time_in, now_str))
+            shift_revenue = float(cur.fetchone()[0] or 0)
+        except Exception:
+            shift_revenue = 0
+        cur.execute("UPDATE admin_dtr SET time_out=%s, shift_revenue=%s WHERE id=%s",
+            (now_str, shift_revenue, open_id))
         conn.commit()
     cur.close(); conn.close()
-    log_activity(username, "LOGOUT", f"Admin logged out: {username}")
-    return jsonify({"message": "Logged out successfully"})
+    log_activity(username, "LOGOUT", f"Admin logged out. Shift revenue: P{shift_revenue:,.2f}")
+    return jsonify({"message": "Logged out successfully", "shift_revenue": shift_revenue})
 
 
 # ── Employee DTR ──────────────────────────────────────────────────────────────

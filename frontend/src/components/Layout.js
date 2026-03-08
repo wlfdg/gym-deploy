@@ -2,13 +2,12 @@ import { NavLink, useNavigate } from "react-router-dom";
 import { logoutAdmin } from "../api/config";
 
 const NAV_LINKS = [
-  { to: "/dashboard",  icon: "⚡", label: "Dashboard" },
-  { to: "/members",    icon: "👥", label: "Members" },
+  { to: "/dashboard",  icon: "⚡", label: "Dashboard"  },
+  { to: "/members",    icon: "👥", label: "Members"    },
   { to: "/attendance", icon: "⏱",  label: "Attendance" },
-  { to: "/walkins",    icon: "🚶", label: "Walk-ins" },
-  { to: "/alerts",     icon: "🔔", label: "Alerts" },
-  { to: "/reports",    icon: "📊", label: "Reports" },
-  { to: "/dtr",        icon: "📋", label: "Employee DTR" },
+  { to: "/walkins",    icon: "🚶", label: "Walk-ins"   },
+  { to: "/alerts",     icon: "🔔", label: "Alerts"     },
+  { to: "/reports",    icon: "📊", label: "Reports"    },
 ];
 
 function Layout({ children }) {

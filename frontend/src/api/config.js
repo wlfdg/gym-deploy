@@ -34,17 +34,32 @@ api.interceptors.response.use(
 
 export const clearCache = () => cache.clear();
 export const isSuperAdmin = () => localStorage.getItem("gym_role") === "superadmin";
+export const getShiftId = () => localStorage.getItem("gym_shift_id");
 
-// Call this on logout to auto time-out the admin
+// Called after successful login — stores shift_id returned from backend
+export const storeSession = (username, role, shiftId) => {
+  localStorage.setItem("gym_admin",    username);
+  localStorage.setItem("gym_role",     role);
+  if (shiftId) localStorage.setItem("gym_shift_id", String(shiftId));
+};
+
+// Called on logout — sends shift_id so backend can calculate shift revenue
 export const logoutAdmin = async () => {
   const username = localStorage.getItem("gym_admin");
+  const shiftId  = localStorage.getItem("gym_shift_id");
   try {
     if (username) {
-      await api.post("/logout", { username });
+      const res = await api.post("/logout", { username, shift_id: shiftId ? parseInt(shiftId) : null });
+      const rev = res.data?.shift_revenue;
+      if (rev !== undefined) {
+        // Show shift summary alert before clearing
+        alert(`Shift ended.\nTotal walk-in revenue collected this shift: P${Number(rev).toLocaleString("en-PH", { minimumFractionDigits: 2 })}`);
+      }
     }
   } catch {}
   localStorage.removeItem("gym_admin");
   localStorage.removeItem("gym_role");
+  localStorage.removeItem("gym_shift_id");
 };
 
 export default API;
