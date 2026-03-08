@@ -101,13 +101,13 @@ def login():
         cur2.execute("""
             UPDATE admin_dtr
             SET time_out = COALESCE(time_out, %s),
-                shift_ts_out = COALESCE(shift_ts_out::text, %s)::text
+                shift_ts_out = COALESCE(shift_ts_out, %s::timestamp)
             WHERE admin_username = %s AND time_out IS NULL
         """, (time_now, ts_now, admin_username))
         # Insert new shift row
         cur2.execute("""
             INSERT INTO admin_dtr (admin_username, date, time_in, shift_ts_in)
-            VALUES (%s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s::timestamp)
         """, (admin_username, today, time_now, ts_now))
         conn2.commit()
         cur2.execute("""
@@ -1124,7 +1124,7 @@ def logout():
         except Exception:
             shift_revenue = 0
         cur.execute("""
-            UPDATE admin_dtr SET time_out=%s, shift_ts_out=%s, shift_revenue=%s
+            UPDATE admin_dtr SET time_out=%s, shift_ts_out=%s::timestamp, shift_revenue=%s
             WHERE id=%s
         """, (time_now, ts_now, shift_revenue, open_id))
         conn.commit()
