@@ -326,7 +326,7 @@ tr:hover td { background: rgba(255,255,255,0.02); }
   .btn-sm { padding: 7px 10px; font-size: 11px; }
 
   /* ── Login ── */
-  .login-page { padding: 16px; padding-top: 50px; align-items: flex-start; }
+  .login-page { padding: 16px; align-items: center; justify-content: center; }
   .login-card { padding: 28px 18px; border-radius: 14px; }
 
   /* ── Alerts ── */

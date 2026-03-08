@@ -1056,5 +1056,30 @@ def owner_change_password():
     log_activity("owner", "CHANGE_PASSWORD", "Owner changed their password")
     return jsonify({"message": "Password changed successfully!"})
 
+
+@app.route("/admins/<username>/change-password", methods=["POST"])
+def owner_change_admin_password(username):
+    data   = request.json or {}
+    new_pw = data.get("new_password", "").strip()
+    if not new_pw:
+        return error("New password is required.")
+    if len(new_pw) < 6:
+        return error("Password must be at least 6 characters.")
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("SELECT username, role FROM admins WHERE username=%s", (username,))
+    admin = cur.fetchone()
+    if not admin:
+        cur.close(); conn.close()
+        return error("Admin not found.", 404)
+    if admin[1] == "owner":
+        cur.close(); conn.close()
+        return error("Cannot change owner password from here.")
+    hashed = hashlib.sha256(new_pw.encode()).hexdigest()
+    cur.execute("UPDATE admins SET password=%s WHERE username=%s", (hashed, username))
+    conn.commit(); cur.close(); conn.close()
+    recorded_by = request.headers.get("X-Admin-User", "owner")
+    log_activity(recorded_by, "CHANGE_ADMIN_PASSWORD", f"Changed password for admin: {username}")
+    return jsonify({"message": f"Password for {username} updated successfully!"})
+
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
