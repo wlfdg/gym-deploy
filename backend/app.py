@@ -90,6 +90,19 @@ def login():
     if status == "disabled":
         return error("Your account has been disabled. Contact the primary admin.", 403)
     log_activity(admin_username, "LOGIN", f"Logged in")
+    # Auto time-in on login
+    try:
+        today    = datetime.now(PHT).strftime("%Y-%m-%d")
+        time_now = datetime.now(PHT).strftime("%I:%M %p")
+        conn2 = get_db(); cur2 = conn2.cursor()
+        cur2.execute("SELECT id FROM employee_dtr WHERE employee_name=%s AND date=%s AND time_out IS NULL", (admin_username, today))
+        if not cur2.fetchone():
+            cur2.execute("INSERT INTO employee_dtr (employee_name, date, time_in, note, recorded_by) VALUES (%s,%s,%s,%s,%s)",
+                (admin_username, today, time_now, "Auto - Login", "system"))
+            conn2.commit()
+        cur2.close(); conn2.close()
+    except Exception:
+        pass
     return jsonify({"success": True, "username": admin_username, "role": role})
 
 
@@ -619,14 +632,16 @@ def export_csv():
                      "Price", "Discount%", "Net Price", "Start Date", "Expiration Date", "Status"])
     today_str = datetime.now(PHT).strftime("%Y-%m-%d")
     for r in rows:
-        net = r["price"] - (r["price"] * r["discount"] / 100)
-        exp = r["expiration_date"]
-        if exp < today_str:
-            status = "Expired"
-        elif (datetime.strptime(exp, "%Y-%m-%d") - datetime.now(PHT)).days <= 7:
-            status = "Expiring Soon"
-        else:
-            status = "Active"
+        try:
+            net = float(r["price"] or 0) - (float(r["price"] or 0) * float(r["discount"] or 0) / 100)
+            exp = r["expiration_date"] or ""
+            if not exp or exp < today_str:
+                status = "Expired"
+            else:
+                days_left = (datetime.strptime(exp, "%Y-%m-%d") - datetime.now(PHT).replace(tzinfo=None)).days
+                status = "Expiring Soon" if days_left <= 7 else "Active"
+        except Exception:
+            net = 0; status = "Unknown"
         writer.writerow([r["id"], r["name"], r["email"], r["phone"], r["plan"],
                          r["months"], r["price"], r["discount"], round(net, 2),
                          r["start_date"], r["expiration_date"], status])
@@ -832,6 +847,9 @@ def report_excel():
     response.headers["Content-Disposition"] = f"attachment; filename={filename}"
     response.headers["Content-Type"] = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     return response
+    except Exception as ex:
+        import traceback
+        return error(f"Error generating report: {str(ex)}", 500)
 
 
 # ── Admin DTR ─────────────────────────────────────────────────────────────────
@@ -939,6 +957,25 @@ def delete_admin_dtr(dtr_id):
     if affected == 0:
         return error("Record not found.", 404)
     return jsonify({"message": "Record deleted"})
+
+
+@app.route("/logout", methods=["POST"])
+def logout():
+    data     = request.json or {}
+    username = data.get("username", "").strip()
+    if not username:
+        return jsonify({"message": "Logged out"})
+    today    = datetime.now(PHT).strftime("%Y-%m-%d")
+    time_now = datetime.now(PHT).strftime("%I:%M %p")
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("SELECT id FROM employee_dtr WHERE employee_name=%s AND date=%s AND time_out IS NULL", (username, today))
+    record = cur.fetchone()
+    if record:
+        cur.execute("UPDATE employee_dtr SET time_out=%s, note=%s WHERE id=%s", (time_now, "Auto - Logout", record[0]))
+        conn.commit()
+    cur.close(); conn.close()
+    log_activity(username, "LOGOUT", f"Admin logged out: {username}")
+    return jsonify({"message": "Logged out successfully"})
 
 
 # ── Employee DTR ──────────────────────────────────────────────────────────────

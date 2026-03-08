@@ -35,5 +35,17 @@ api.interceptors.response.use(
 export const clearCache = () => cache.clear();
 export const isSuperAdmin = () => localStorage.getItem("gym_role") === "superadmin";
 
+// Call this on logout to auto time-out the admin
+export const logoutAdmin = async () => {
+  const username = localStorage.getItem("gym_admin");
+  try {
+    if (username) {
+      await api.post("/logout", { username });
+    }
+  } catch {}
+  localStorage.removeItem("gym_admin");
+  localStorage.removeItem("gym_role");
+};
+
 export default API;
 export { api };

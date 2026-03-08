@@ -1,4 +1,5 @@
 import { NavLink, useNavigate } from "react-router-dom";
+import { logoutAdmin } from "../api/config";
 
 const NAV_LINKS = [
   { to: "/dashboard",  icon: "⚡", label: "Dashboard" },
@@ -14,9 +15,8 @@ function Layout({ children }) {
   const navigate = useNavigate();
   const admin = localStorage.getItem("gym_admin") || "Admin";
 
-  const logout = () => {
-    localStorage.removeItem("gym_admin");
-    localStorage.removeItem("gym_role");
+  const logout = async () => {
+    await logoutAdmin();
     navigate("/", { replace: true });
   };
 
@@ -40,7 +40,7 @@ function Layout({ children }) {
           <div style={{ fontSize:11, color:"var(--muted)", marginBottom:10, textTransform:"uppercase", letterSpacing:1 }}>
             {admin}
           </div>
-          <button className="logout-btn" onClick={logout}>↩ Logout</button>
+          <button className="logout-btn" onClick={logout}>Logout</button>
         </div>
       </aside>
       <main className="main">{children}</main>

@@ -13,13 +13,6 @@ function Dashboard() {
   const [expiring, setExpiring] = useState({ expiring_soon: [], expired: [] });
   const [loading, setLoading]   = useState(true);
   const [error, setError]       = useState("");
-  const [empName, setEmpName]   = useState("");
-  const [empNote, setEmpNote]   = useState("");
-  const [empNames, setEmpNames] = useState([]);
-  const [suggestions, setSuggestions] = useState([]);
-  const [onDuty, setOnDuty]     = useState([]);
-  const [dtrMsg, setDtrMsg]     = useState(null);
-  const [dtrLoading, setDtrLoading] = useState(false);
   const mounted = useRef(true);
   useEffect(() => { return () => { mounted.current = false; }; }, []);
 
@@ -37,54 +30,7 @@ function Dashboard() {
     setLoading(false);
   }, []);
 
-  const fetchDTR = useCallback(async () => {
-    try {
-      const today = new Date().toISOString().split("T")[0];
-      const [n, t] = await Promise.all([
-        api.get("/employee/dtr/employees"),
-        api.get("/employee/dtr?date=" + today)
-      ]);
-      if (!mounted.current) return;
-      setEmpNames(n.data);
-      setOnDuty(t.data.filter(r => !r.time_out));
-    } catch {}
-  }, []);
-
-  useEffect(() => { fetchData(); fetchDTR(); }, [fetchData, fetchDTR]);
-
-  const showDtrMsg = (msg, type = "success") => {
-    setDtrMsg({ msg, type });
-    setTimeout(() => setDtrMsg(null), 4000);
-  };
-
-  const handleNameChange = (val) => {
-    setEmpName(val);
-    setSuggestions(val.length >= 1
-      ? empNames.filter(n => n.toLowerCase().includes(val.toLowerCase())).slice(0, 5)
-      : []);
-  };
-
-  const timeIn = async () => {
-    if (!empName.trim()) { showDtrMsg("Enter employee name.", "error"); return; }
-    setDtrLoading(true);
-    try {
-      const res = await api.post("/employee/dtr/timein", { name: empName.trim(), note: empNote });
-      showDtrMsg(res.data.message);
-      setEmpName(""); setEmpNote(""); setSuggestions([]);
-      fetchDTR();
-    } catch (e) { showDtrMsg(e.response?.data?.message || "Error.", "error"); }
-    setDtrLoading(false);
-  };
-
-  const timeOut = async (record) => {
-    setDtrLoading(true);
-    try {
-      const res = await api.post("/employee/dtr/timeout", { name: record.employee_name, id: record.id });
-      showDtrMsg(res.data.message);
-      fetchDTR();
-    } catch (e) { showDtrMsg(e.response?.data?.message || "Error.", "error"); }
-    setDtrLoading(false);
-  };
+  useEffect(() => { fetchData(); }, [fetchData]);
 
   const fmt = (n) => Number(n || 0).toLocaleString();
 
@@ -146,89 +92,6 @@ function Dashboard() {
         </div>
       </div>
 
-      {/* EMPLOYEE DTR CARD */}
-      <div className="card" style={{ borderColor:"rgba(0,176,255,0.25)", background:"linear-gradient(135deg,#1a1a1a 0%,#0a121f 100%)", marginBottom: 20 }}>
-        <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom: 16 }}>
-          <div>
-            <div className="stat-label" style={{ fontSize: 16, color:"#00b0ff" }}>Employee DTR</div>
-            <div style={{ fontSize: 12, color:"var(--muted)", marginTop: 4 }}>
-              {onDuty.length > 0 ? onDuty.length + " employee(s) currently on duty" : "No employees on duty yet"}
-            </div>
-          </div>
-          <Link to="/dtr" className="btn btn-ghost btn-sm">View Full DTR</Link>
-        </div>
-
-        <div style={{ display:"flex", gap:10, flexWrap:"wrap", alignItems:"center", marginBottom: 12 }}>
-          <div style={{ position:"relative", flex:"1 1 180px" }}>
-            <input
-              placeholder="Type employee name..."
-              value={empName}
-              onChange={e => handleNameChange(e.target.value)}
-              onKeyDown={e => e.key === "Enter" && timeIn()}
-              autoComplete="off"
-              style={{ width:"100%", margin:0 }}
-            />
-            {suggestions.length > 0 && (
-              <div style={{ position:"absolute", top:"100%", left:0, right:0, background:"#1a1a1a", border:"1px solid var(--border)", borderRadius:8, zIndex:50, overflow:"hidden" }}>
-                {suggestions.map(s => (
-                  <div key={s}
-                    style={{ padding:"9px 14px", cursor:"pointer", borderBottom:"1px solid var(--border)", fontSize:13 }}
-                    onMouseDown={() => { setEmpName(s); setSuggestions([]); }}>
-                    {s}
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
-          <input
-            placeholder="Note (optional)"
-            value={empNote}
-            onChange={e => setEmpNote(e.target.value)}
-            style={{ flex:"1 1 130px", margin:0 }}
-          />
-          <button
-            className="btn btn-success"
-            onClick={timeIn}
-            disabled={dtrLoading}
-            style={{ whiteSpace:"nowrap" }}>
-            Time In Employee
-          </button>
-        </div>
-
-        {dtrMsg && (
-          <div style={{
-            padding:"10px 14px", borderRadius:8, marginBottom:12, fontSize:13, fontWeight:600,
-            background: dtrMsg.type === "success" ? "rgba(0,230,118,0.1)" : "rgba(255,23,68,0.1)",
-            border:"1px solid " + (dtrMsg.type === "success" ? "rgba(0,230,118,0.3)" : "rgba(255,23,68,0.3)"),
-            color: dtrMsg.type === "success" ? "var(--success)" : "var(--danger)"
-          }}>
-            {dtrMsg.msg}
-          </div>
-        )}
-
-        {onDuty.length > 0 && (
-          <div style={{ display:"flex", flexWrap:"wrap", gap:8 }}>
-            {onDuty.map(r => (
-              <div key={r.id} style={{
-                display:"flex", alignItems:"center", gap:10, padding:"8px 14px",
-                background:"rgba(0,230,118,0.08)", border:"1px solid rgba(0,230,118,0.2)",
-                borderRadius:8, fontSize:13
-              }}>
-                <span style={{ color:"var(--success)", fontWeight:600 }}>{r.employee_name}</span>
-                <span style={{ color:"var(--muted)", fontSize:11 }}>in at {r.time_in}</span>
-                <button
-                  className="btn btn-danger btn-sm"
-                  style={{ padding:"3px 10px", fontSize:11 }}
-                  onClick={() => timeOut(r)}
-                  disabled={dtrLoading}>
-                  Time Out
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
-      </div>
-
       <div className="two-col">
         <div className="card">
           <div className="dash-section-header">
@@ -264,6 +127,7 @@ function Dashboard() {
 
       <div className="action-row">
         <Link to="/members" className="btn btn-primary">Manage Members</Link>
+        <Link to="/dtr"     className="btn btn-ghost">Employee DTR</Link>
         <Link to="/alerts"  className="btn btn-ghost">View All Alerts</Link>
         <button className="btn btn-ghost" onClick={() => fetchData(true)} disabled={loading}>Refresh</button>
       </div>
