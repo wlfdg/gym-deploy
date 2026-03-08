@@ -7,7 +7,7 @@ const NAV_LINKS = [
   { to: "/walkins",    icon: "🚶", label: "Walk-ins" },
   { to: "/alerts",     icon: "🔔", label: "Alerts" },
   { to: "/reports",    icon: "📊", label: "Reports" },
-  { to: "/dtr",        icon: "🗓", label: "DTR" },
+  { to: "/dtr",        icon: "🗓", label: "Employee DTR" },
 ];
 
 function Layout({ children }) {
@@ -16,6 +16,7 @@ function Layout({ children }) {
 
   const logout = () => {
     localStorage.removeItem("gym_admin");
+    localStorage.removeItem("gym_role");
     navigate("/", { replace: true });
   };
 
@@ -28,11 +29,8 @@ function Layout({ children }) {
         </div>
         <nav>
           {NAV_LINKS.map(({ to, icon, label }) => (
-            <NavLink
-              key={to}
-              to={to}
-              className={({ isActive }) => "nav-item" + (isActive ? " active" : "")}
-            >
+            <NavLink key={to} to={to}
+              className={({ isActive }) => "nav-item" + (isActive ? " active" : "")}>
               <span className="icon">{icon}</span>
               <span>{label}</span>
             </NavLink>
