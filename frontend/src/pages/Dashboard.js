@@ -130,7 +130,7 @@ function Dashboard() {
         <div className="card" style={{ borderColor:"rgba(232,255,0,0.2)", background:"linear-gradient(135deg,#1a1a1a 0%,#1f1f0a 100%)" }}>
           <div className="dash-inner">
             <div>
-              <div className="stat-label">🚶 Walk-in Revenue Today</div>
+              <div className="stat-label">[W] Walk-in Revenue Today</div>
               <div className="stat-value yellow" style={{ fontSize: 44 }}>{loading ? "—" : `₱${fmt(stats.walkin_revenue_today)}`}</div>
               <div className="stat-sub">{loading ? "" : `${stats.walkin_count_today} walk-in${stats.walkin_count_today !== 1 ? "s" : ""}`}</div>
             </div>
@@ -140,7 +140,7 @@ function Dashboard() {
         <div className="card" style={{ borderColor:"rgba(0,230,118,0.2)", background:"linear-gradient(135deg,#1a1a1a 0%,#0a1f12 100%)" }}>
           <div className="dash-inner">
             <div>
-              <div className="stat-label">⏱ Members In Gym Now</div>
+              <div className="stat-label">[T] Members In Gym Now</div>
               <div className="stat-value green" style={{ fontSize: 44 }}>{loading ? "—" : stats.members_in_gym}</div>
               <div className="stat-sub">{loading ? "" : `${stats.visits_today} total visit${stats.visits_today !== 1 ? "s" : ""} today`}</div>
             </div>
@@ -156,9 +156,9 @@ function Dashboard() {
       <div className="card" style={{ borderColor:"rgba(0,176,255,0.2)", background:"linear-gradient(135deg,#1a1a1a 0%,#0a121f 100%)", marginBottom: 20 }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom: 16 }}>
           <div>
-            <div className="stat-label">📋 Employee DTR</div>
+            <div className="stat-label">[DTR] Employee DTR</div>
             <div style={{ fontSize: 12, color:"var(--muted)", marginTop: 2 }}>
-              {onDuty.length > 0 ? `🟢 ${onDuty.length} employee${onDuty.length !== 1 ? "s" : ""} on duty` : "No employees on duty yet"}
+              {onDuty.length > 0 ? `[ON] ${onDuty.length} employee${onDuty.length !== 1 ? "s" : ""} on duty` : "No employees on duty yet"}
             </div>
           </div>
           <Link to="/dtr" className="btn btn-ghost btn-sm">Full DTR →</Link>
@@ -194,7 +194,7 @@ function Dashboard() {
             style={{ flex:"1 1 140px", margin:0 }}
           />
           <button className="btn btn-success btn-sm" onClick={timeIn} disabled={dtrLoading} style={{ whiteSpace:"nowrap" }}>
-            ⏱ Time In
+            [T] Time In
           </button>
         </div>
 
@@ -219,7 +219,7 @@ function Dashboard() {
                 background:"rgba(0,230,118,0.08)", border:"1px solid rgba(0,230,118,0.2)",
                 borderRadius:8, fontSize:13
               }}>
-                <span style={{ color:"var(--success)", fontWeight:600 }}>🟢 {r.employee_name}</span>
+                <span style={{ color:"var(--success)", fontWeight:600 }}>[ON] {r.employee_name}</span>
                 <span style={{ color:"var(--muted)", fontSize:11 }}>since {r.time_in}</span>
                 <button className="btn btn-danger btn-sm" style={{ padding:"3px 10px", fontSize:11 }}
                   onClick={() => timeOut(r)} disabled={dtrLoading}>
