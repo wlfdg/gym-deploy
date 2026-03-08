@@ -3,6 +3,9 @@ from flask_cors import CORS
 import psycopg2
 import psycopg2.extras
 from datetime import datetime, timedelta
+from zoneinfo import ZoneInfo
+
+PHT = ZoneInfo("Asia/Manila")
 import csv
 import io
 import hashlib
@@ -134,7 +137,7 @@ def add_member():
     except (ValueError, TypeError):
         return error("Invalid numeric values.")
 
-    start = datetime.now()
+    start = datetime.now(PHT)
     expiration = start + timedelta(days=30 * months)
     conn = get_db()
     cur = conn.cursor()
@@ -168,7 +171,7 @@ def update_member(member_id):
     except (ValueError, TypeError):
         return error("Invalid numeric values.")
 
-    start_str = data.get("start_date") or datetime.now().strftime("%Y-%m-%d")
+    start_str = data.get("start_date") or datetime.now(PHT).strftime("%Y-%m-%d")
     try:
         expiration = (datetime.strptime(start_str, "%Y-%m-%d") + timedelta(days=30 * months)).strftime("%Y-%m-%d")
     except ValueError:
@@ -216,7 +219,7 @@ def time_in():
     member_id = data.get("member_id")
     if not member_id:
         return error("member_id is required.")
-    now = datetime.now()
+    now = datetime.now(PHT)
     today = now.strftime("%Y-%m-%d")
     time_now = now.strftime("%I:%M %p")
     conn = get_db()
@@ -250,7 +253,7 @@ def time_out():
     member_id = data.get("member_id")
     if not member_id:
         return error("member_id is required.")
-    now = datetime.now()
+    now = datetime.now(PHT)
     today = now.strftime("%Y-%m-%d")
     time_now = now.strftime("%I:%M %p")
     conn = get_db()
@@ -272,7 +275,7 @@ def time_out():
 
 @app.route("/attendance", methods=["GET"])
 def get_attendance():
-    date = request.args.get("date", datetime.now().strftime("%Y-%m-%d"))
+    date = request.args.get("date", datetime.now(PHT).strftime("%Y-%m-%d"))
     conn = get_db()
     cur = conn.cursor()
     cur.execute("SELECT * FROM attendance WHERE date=%s ORDER BY id DESC", (date,))
@@ -294,7 +297,7 @@ def get_attendance():
 
 @app.route("/walkins", methods=["GET"])
 def get_walkins():
-    date = request.args.get("date", datetime.now().strftime("%Y-%m-%d"))
+    date = request.args.get("date", datetime.now(PHT).strftime("%Y-%m-%d"))
     conn = get_db()
     cur = conn.cursor()
     cur.execute("SELECT * FROM walkins WHERE date=%s ORDER BY id DESC", (date,))
@@ -317,7 +320,7 @@ def add_walkin():
             return error("Amount must be greater than 0.")
     except (ValueError, TypeError):
         return error("Invalid amount.")
-    date = data.get("date") or datetime.now().strftime("%Y-%m-%d")
+    date = data.get("date") or datetime.now(PHT).strftime("%Y-%m-%d")
     conn = get_db()
     cur = conn.cursor()
     cur.execute(
@@ -346,7 +349,7 @@ def delete_walkin(walkin_id):
 
 @app.route("/stats", methods=["GET"])
 def stats():
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now(PHT).strftime("%Y-%m-%d")
     conn = get_db()
     cur = conn.cursor()
 
@@ -398,8 +401,8 @@ def expiring():
         days = max(1, min(int(request.args.get("days", 7)), 365))
     except ValueError:
         days = 7
-    today = datetime.now().strftime("%Y-%m-%d")
-    future = (datetime.now() + timedelta(days=days)).strftime("%Y-%m-%d")
+    today = datetime.now(PHT).strftime("%Y-%m-%d")
+    future = (datetime.now(PHT) + timedelta(days=days)).strftime("%Y-%m-%d")
     conn = get_db()
     cur = conn.cursor()
     cur.execute(
@@ -430,13 +433,13 @@ def export_csv():
     writer = csv.writer(output)
     writer.writerow(["ID", "Name", "Email", "Phone", "Plan", "Months",
                      "Price", "Discount%", "Net Price", "Start Date", "Expiration Date", "Status"])
-    today_str = datetime.now().strftime("%Y-%m-%d")
+    today_str = datetime.now(PHT).strftime("%Y-%m-%d")
     for r in rows:
         net = r["price"] - (r["price"] * r["discount"] / 100)
         exp = r["expiration_date"]
         if exp < today_str:
             status = "Expired"
-        elif (datetime.strptime(exp, "%Y-%m-%d") - datetime.now()).days <= 7:
+        elif (datetime.strptime(exp, "%Y-%m-%d") - datetime.now(PHT)).days <= 7:
             status = "Expiring Soon"
         else:
             status = "Active"
@@ -459,8 +462,8 @@ def report_excel():
     except ImportError:
         return error("openpyxl not installed.", 500)
 
-    year = request.args.get("year", datetime.now().strftime("%Y"))
-    month = request.args.get("month", datetime.now().strftime("%m")).zfill(2)
+    year = request.args.get("year", datetime.now(PHT).strftime("%Y"))
+    month = request.args.get("month", datetime.now(PHT).strftime("%m")).zfill(2)
     month_str = f"{year}-{month}"
     try:
         month_name = datetime.strptime(month_str, "%Y-%m").strftime("%B %Y")
@@ -587,12 +590,12 @@ def report_excel():
     for i, h in enumerate(h2, 1):
         ws2.cell(row=2, column=i, value=h)
     style_header_row(ws2, 2, len(h2))
-    today_str = datetime.now().strftime("%Y-%m-%d")
+    today_str = datetime.now(PHT).strftime("%Y-%m-%d")
     for idx, m in enumerate(all_members):
         r = 3 + idx
         net = m["price"] - (m["price"] * m["discount"] / 100)
         exp = m["expiration_date"]
-        days_left = (datetime.strptime(exp, "%Y-%m-%d") - datetime.now()).days
+        days_left = (datetime.strptime(exp, "%Y-%m-%d") - datetime.now(PHT)).days
         if exp < today_str: status, color = "Expired", "FF1744"
         elif days_left <= 7: status, color = "Expiring Soon", "FFB300"
         else: status, color = "Active", GREEN
@@ -655,8 +658,8 @@ def admin_time_in():
     username = data.get("username", "").strip()
     if not username:
         return error("Username is required.")
-    today = datetime.now().strftime("%Y-%m-%d")
-    time_now = datetime.now().strftime("%I:%M %p")
+    today = datetime.now(PHT).strftime("%Y-%m-%d")
+    time_now = datetime.now(PHT).strftime("%I:%M %p")
     conn = get_db()
     cur = conn.cursor()
     # Check if already timed in today without timing out
@@ -683,8 +686,8 @@ def admin_time_out():
     username = data.get("username", "").strip()
     if not username:
         return error("Username is required.")
-    today = datetime.now().strftime("%Y-%m-%d")
-    time_now = datetime.now().strftime("%I:%M %p")
+    today = datetime.now(PHT).strftime("%Y-%m-%d")
+    time_now = datetime.now(PHT).strftime("%I:%M %p")
     conn = get_db()
     cur = conn.cursor()
     cur.execute(
@@ -706,7 +709,7 @@ def admin_time_out():
 
 @app.route("/admin/dtr", methods=["GET"])
 def get_admin_dtr():
-    date = request.args.get("date", datetime.now().strftime("%Y-%m-%d"))
+    date = request.args.get("date", datetime.now(PHT).strftime("%Y-%m-%d"))
     username = request.args.get("username", "")
     conn = get_db()
     cur = conn.cursor()
@@ -727,8 +730,8 @@ def get_admin_dtr():
 
 @app.route("/admin/dtr/all", methods=["GET"])
 def get_all_admin_dtr():
-    month = request.args.get("month", datetime.now().strftime("%m"))
-    year  = request.args.get("year",  datetime.now().strftime("%Y"))
+    month = request.args.get("month", datetime.now(PHT).strftime("%m"))
+    year  = request.args.get("year",  datetime.now(PHT).strftime("%Y"))
     prefix = f"{year}-{month.zfill(2)}"
     conn = get_db()
     cur = conn.cursor()
@@ -756,4 +759,6 @@ def delete_admin_dtr(dtr_id):
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
+
+
 
