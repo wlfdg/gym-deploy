@@ -1,3 +1,4 @@
+﻿// build: 08/03/2026 2:40:38 pm
 import { useEffect, useState, useCallback, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { api, clearCache } from "../api/config";
@@ -96,7 +97,7 @@ function Dashboard() {
     <Layout>
       <div className="page-header">
         <h2>Dashboard</h2>
-        <p>Welcome back — here's what's happening today.</p>
+        <p>Welcome back â€” here's what's happening today.</p>
       </div>
 
       {error && <div className="error-msg" style={{ marginBottom: 20 }}>{error}</div>}
@@ -105,22 +106,22 @@ function Dashboard() {
       <div className="stats-grid">
         <div className="stat-card">
           <div className="stat-label">Total Members</div>
-          <div className="stat-value yellow">{loading ? "—" : fmt(stats.total_members)}</div>
+          <div className="stat-value yellow">{loading ? "â€”" : fmt(stats.total_members)}</div>
           <div className="stat-sub">All time registrations</div>
         </div>
         <div className="stat-card">
           <div className="stat-label">Active Members</div>
-          <div className="stat-value green">{loading ? "—" : fmt(stats.active_members)}</div>
+          <div className="stat-value green">{loading ? "â€”" : fmt(stats.active_members)}</div>
           <div className="stat-sub">Current subscriptions</div>
         </div>
         <div className="stat-card">
           <div className="stat-label">Total Revenue</div>
-          <div className="stat-value" style={{ fontSize: 34 }}>{loading ? "—" : `₱${fmt(stats.revenue)}`}</div>
+          <div className="stat-value" style={{ fontSize: 34 }}>{loading ? "â€”" : `â‚±${fmt(stats.revenue)}`}</div>
           <div className="stat-sub">After discounts</div>
         </div>
         <div className="stat-card">
           <div className="stat-label">New This Month</div>
-          <div className="stat-value" style={{ color: "#00b0ff" }}>{loading ? "—" : fmt(stats.new_this_month)}</div>
+          <div className="stat-value" style={{ color: "#00b0ff" }}>{loading ? "â€”" : fmt(stats.new_this_month)}</div>
           <div className="stat-sub">Recent sign-ups</div>
         </div>
       </div>
@@ -131,28 +132,28 @@ function Dashboard() {
           <div className="dash-inner">
             <div>
               <div className="stat-label">[W] Walk-in Revenue Today</div>
-              <div className="stat-value yellow" style={{ fontSize: 44 }}>{loading ? "—" : `₱${fmt(stats.walkin_revenue_today)}`}</div>
+              <div className="stat-value yellow" style={{ fontSize: 44 }}>{loading ? "â€”" : `â‚±${fmt(stats.walkin_revenue_today)}`}</div>
               <div className="stat-sub">{loading ? "" : `${stats.walkin_count_today} walk-in${stats.walkin_count_today !== 1 ? "s" : ""}`}</div>
             </div>
-            <Link to="/walkins" className="btn btn-primary btn-sm">Manage →</Link>
+            <Link to="/walkins" className="btn btn-primary btn-sm">Manage â†’</Link>
           </div>
         </div>
         <div className="card" style={{ borderColor:"rgba(0,230,118,0.2)", background:"linear-gradient(135deg,#1a1a1a 0%,#0a1f12 100%)" }}>
           <div className="dash-inner">
             <div>
               <div className="stat-label">[T] Members In Gym Now</div>
-              <div className="stat-value green" style={{ fontSize: 44 }}>{loading ? "—" : stats.members_in_gym}</div>
+              <div className="stat-value green" style={{ fontSize: 44 }}>{loading ? "â€”" : stats.members_in_gym}</div>
               <div className="stat-sub">{loading ? "" : `${stats.visits_today} total visit${stats.visits_today !== 1 ? "s" : ""} today`}</div>
             </div>
             <div style={{ display:"flex", gap:8, flexWrap:"wrap" }}>
-              <Link to="/attendance" className="btn btn-success btn-sm">Time In →</Link>
-              <Link to="/attendance" className="btn btn-danger btn-sm">Time Out ↩</Link>
+              <Link to="/attendance" className="btn btn-success btn-sm">Time In â†’</Link>
+              <Link to="/attendance" className="btn btn-danger btn-sm">Time Out â†©</Link>
             </div>
           </div>
         </div>
       </div>
 
-      {/* ── EMPLOYEE DTR QUICK ACTION ── */}
+      {/* â”€â”€ EMPLOYEE DTR QUICK ACTION â”€â”€ */}
       <div className="card" style={{ borderColor:"rgba(0,176,255,0.2)", background:"linear-gradient(135deg,#1a1a1a 0%,#0a121f 100%)", marginBottom: 20 }}>
         <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom: 16 }}>
           <div>
@@ -161,7 +162,7 @@ function Dashboard() {
               {onDuty.length > 0 ? `[ON] ${onDuty.length} employee${onDuty.length !== 1 ? "s" : ""} on duty` : "No employees on duty yet"}
             </div>
           </div>
-          <Link to="/dtr" className="btn btn-ghost btn-sm">Full DTR →</Link>
+          <Link to="/dtr" className="btn btn-ghost btn-sm">Full DTR â†’</Link>
         </div>
 
         {/* Time In form */}
@@ -180,7 +181,7 @@ function Dashboard() {
                 {suggestions.map(s => (
                   <div key={s} style={{ padding:"9px 14px", cursor:"pointer", borderBottom:"1px solid var(--border)", fontSize:13 }}
                     onMouseDown={() => { setEmpName(s); setSuggestions([]); }}>
-                    👤 {s}
+                    ðŸ‘¤ {s}
                   </div>
                 ))}
               </div>
@@ -206,7 +207,7 @@ function Dashboard() {
             border: `1px solid ${dtrMsg.type === "success" ? "rgba(0,230,118,0.3)" : "rgba(255,23,68,0.3)"}`,
             color: dtrMsg.type === "success" ? "var(--success)" : "var(--danger)"
           }}>
-            {dtrMsg.type === "success" ? "✅" : "❌"} {dtrMsg.msg}
+            {dtrMsg.type === "success" ? "âœ…" : "âŒ"} {dtrMsg.msg}
           </div>
         )}
 
@@ -223,7 +224,7 @@ function Dashboard() {
                 <span style={{ color:"var(--muted)", fontSize:11 }}>since {r.time_in}</span>
                 <button className="btn btn-danger btn-sm" style={{ padding:"3px 10px", fontSize:11 }}
                   onClick={() => timeOut(r)} disabled={dtrLoading}>
-                  Out ↩
+                  Out â†©
                 </button>
               </div>
             ))}
@@ -235,11 +236,11 @@ function Dashboard() {
       <div className="two-col">
         <div className="card">
           <div className="dash-section-header">
-            <h3 style={{ fontSize:20 }}>⚠ Expiring Soon</h3>
+            <h3 style={{ fontSize:20 }}>âš  Expiring Soon</h3>
             <span className="badge badge-expiring">{expiring.expiring_soon.length} members</span>
           </div>
           {expiring.expiring_soon.length === 0
-            ? <div className="empty-state">✅ No memberships expiring in 7 days</div>
+            ? <div className="empty-state">âœ… No memberships expiring in 7 days</div>
             : <div className="table-wrap"><table>
                 <thead><tr><th>Name</th><th>Plan</th><th>Expires</th></tr></thead>
                 <tbody>{expiring.expiring_soon.map(m => (
@@ -250,11 +251,11 @@ function Dashboard() {
         </div>
         <div className="card">
           <div className="dash-section-header">
-            <h3 style={{ fontSize:20 }}>❌ Expired</h3>
+            <h3 style={{ fontSize:20 }}>âŒ Expired</h3>
             <span className="badge badge-expired">{expiring.expired.length} members</span>
           </div>
           {expiring.expired.length === 0
-            ? <div className="empty-state">✅ No expired memberships</div>
+            ? <div className="empty-state">âœ… No expired memberships</div>
             : <div className="table-wrap"><table>
                 <thead><tr><th>Name</th><th>Plan</th><th>Expired On</th></tr></thead>
                 <tbody>{expiring.expired.map(m => (
@@ -266,12 +267,13 @@ function Dashboard() {
       </div>
 
       <div className="action-row">
-        <Link to="/members" className="btn btn-primary">Manage Members →</Link>
+        <Link to="/members" className="btn btn-primary">Manage Members â†’</Link>
         <Link to="/alerts"  className="btn btn-ghost">View All Alerts</Link>
-        <button className="btn btn-ghost" onClick={() => fetchData(true)} disabled={loading}>↻ Refresh</button>
+        <button className="btn btn-ghost" onClick={() => fetchData(true)} disabled={loading}>â†» Refresh</button>
       </div>
     </Layout>
   );
 }
 export default Dashboard;
  
+
