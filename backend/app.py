@@ -3,9 +3,6 @@ from flask_cors import CORS
 import psycopg2
 import psycopg2.extras
 from datetime import datetime, timedelta
-from zoneinfo import ZoneInfo
-
-PHT = ZoneInfo("Asia/Manila")
 import csv
 import io
 import hashlib
@@ -51,6 +48,22 @@ def rows_to_list(rows, cursor):
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
 
+def log_activity(username, action, details=""):
+    """Log admin activity to the database."""
+    try:
+        conn = get_db()
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO activity_logs (admin_username, action, details) VALUES (%s, %s, %s)",
+            (username, action, details)
+        )
+        conn.commit()
+        cur.close()
+        conn.close()
+    except Exception:
+        pass  # Don't crash if logging fails
+
+
 @app.route("/login", methods=["POST"])
 def login():
     data = request.json or {}
@@ -61,15 +74,22 @@ def login():
     conn = get_db()
     cur = conn.cursor()
     cur.execute(
-        "SELECT * FROM admins WHERE username=%s AND password=%s",
+        "SELECT username, role, status FROM admins WHERE username=%s AND password=%s",
         (username, hash_password(password))
     )
-    admin = cur.fetchone()
+    row = cur.fetchone()
     cur.close()
     conn.close()
-    if admin:
-        return jsonify({"success": True, "username": admin[0] if not hasattr(admin, 'keys') else admin["username"]})
-    return error("Invalid username or password.", 401)
+    if not row:
+        return error("Invalid username or password.", 401)
+    admin_username, role, status = row
+    if status == "pending":
+        return error("Your account is pending approval by the primary admin.", 403)
+    if status == "disabled":
+        return error("Your account has been disabled. Contact the primary admin.", 403)
+    log_activity(admin_username, "LOGIN", f"Logged in")
+    return jsonify({"success": True, "username": admin_username, "role": role})
+
 
 @app.route("/register", methods=["POST"])
 def register():
@@ -84,15 +104,171 @@ def register():
         conn = get_db()
         cur = conn.cursor()
         cur.execute(
-            "INSERT INTO admins (username, password) VALUES (%s, %s)",
+            "INSERT INTO admins (username, password, role, status) VALUES (%s, %s, 'admin', 'pending')",
             (username, hash_password(password))
         )
         conn.commit()
         cur.close()
         conn.close()
-        return jsonify({"message": "Admin created"}), 201
+        # Notify owner
+        try:
+            nc = get_db(); nr = nc.cursor()
+            nr.execute(
+                "INSERT INTO notifications (type, title, message) VALUES (%s, %s, %s)",
+                ("NEW_ADMIN", "New Admin Request", f"{username} is requesting admin access.")
+            )
+            nc.commit(); nr.close(); nc.close()
+        except Exception:
+            pass
+        return jsonify({"message": "Registration submitted! Please wait for the owner to approve your account."}), 201
     except psycopg2.errors.UniqueViolation:
         return error("Username already exists.", 409)
+
+
+# ── Notifications ─────────────────────────────────────────────────────────────
+
+@app.route("/notifications", methods=["GET"])
+def get_notifications():
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("SELECT * FROM notifications ORDER BY created_at DESC LIMIT 50")
+    rows = rows_to_list(cur.fetchall(), cur)
+    cur.close(); conn.close()
+    return jsonify(rows)
+
+@app.route("/notifications/unread-count", methods=["GET"])
+def unread_count():
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM notifications WHERE is_read=FALSE")
+    count = cur.fetchone()[0]
+    cur.close(); conn.close()
+    return jsonify({"count": count})
+
+@app.route("/notifications/mark-read", methods=["POST"])
+def mark_notifications_read():
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("UPDATE notifications SET is_read=TRUE WHERE is_read=FALSE")
+    conn.commit(); cur.close(); conn.close()
+    return jsonify({"message": "Marked all as read"})
+
+
+# ── Superadmin: Manage Admins ─────────────────────────────────────────────────
+
+@app.route("/admins", methods=["GET"])
+def get_admins():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT username, role, status FROM admins ORDER BY role DESC, username ASC")
+    rows = rows_to_list(cur.fetchall(), cur)
+    cur.close()
+    conn.close()
+    return jsonify(rows)
+
+
+@app.route("/admins/<username>/approve", methods=["POST"])
+def approve_admin(username):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("UPDATE admins SET status='active' WHERE username=%s AND role='admin'", (username,))
+    conn.commit()
+    affected = cur.rowcount
+    cur.close()
+    conn.close()
+    if affected == 0:
+        return error("Admin not found or cannot be modified.", 404)
+    log_activity("superadmin", "APPROVE_ADMIN", f"Approved admin: {username}")
+    return jsonify({"message": f"{username} approved successfully."})
+
+
+@app.route("/admins/<username>/reject", methods=["POST"])
+def reject_admin(username):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM admins WHERE username=%s AND role='admin' AND status='pending'", (username,))
+    conn.commit()
+    affected = cur.rowcount
+    cur.close()
+    conn.close()
+    if affected == 0:
+        return error("Admin not found.", 404)
+    log_activity("superadmin", "REJECT_ADMIN", f"Rejected admin: {username}")
+    return jsonify({"message": f"{username} rejected and removed."})
+
+
+@app.route("/admins/<username>/disable", methods=["POST"])
+def disable_admin(username):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("UPDATE admins SET status='disabled' WHERE username=%s AND role='admin'", (username,))
+    conn.commit()
+    affected = cur.rowcount
+    cur.close()
+    conn.close()
+    if affected == 0:
+        return error("Admin not found or cannot be modified.", 404)
+    log_activity("superadmin", "DISABLE_ADMIN", f"Disabled admin: {username}")
+    return jsonify({"message": f"{username} has been disabled."})
+
+
+@app.route("/admins/<username>/enable", methods=["POST"])
+def enable_admin(username):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("UPDATE admins SET status='active' WHERE username=%s AND role='admin'", (username,))
+    conn.commit()
+    cur.close()
+    conn.close()
+    log_activity("superadmin", "ENABLE_ADMIN", f"Enabled admin: {username}")
+    return jsonify({"message": f"{username} has been enabled."})
+
+
+@app.route("/admins/<username>", methods=["DELETE"])
+def delete_admin(username):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM admins WHERE username=%s AND role='admin'", (username,))
+    conn.commit()
+    affected = cur.rowcount
+    cur.close()
+    conn.close()
+    if affected == 0:
+        return error("Admin not found or cannot be deleted.", 404)
+    log_activity("superadmin", "DELETE_ADMIN", f"Deleted admin: {username}")
+    return jsonify({"message": f"{username} deleted."})
+
+
+@app.route("/admins/pending/count", methods=["GET"])
+def pending_count():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT COUNT(*) FROM admins WHERE status='pending'")
+    count = cur.fetchone()[0]
+    cur.close()
+    conn.close()
+    return jsonify({"count": count})
+
+
+# ── Activity Logs ─────────────────────────────────────────────────────────────
+
+@app.route("/logs", methods=["GET"])
+def get_logs():
+    limit    = int(request.args.get("limit", 100))
+    username = request.args.get("username", "")
+    conn = get_db()
+    cur = conn.cursor()
+    if username:
+        cur.execute(
+            "SELECT * FROM activity_logs WHERE admin_username=%s ORDER BY created_at DESC LIMIT %s",
+            (username, limit)
+        )
+    else:
+        cur.execute(
+            "SELECT * FROM activity_logs ORDER BY created_at DESC LIMIT %s",
+            (limit,)
+        )
+    rows = rows_to_list(cur.fetchall(), cur)
+    cur.close()
+    conn.close()
+    return jsonify(rows)
 
 # ── Members ───────────────────────────────────────────────────────────────────
 
@@ -137,7 +313,7 @@ def add_member():
     except (ValueError, TypeError):
         return error("Invalid numeric values.")
 
-    start = datetime.now(PHT)
+    start = datetime.now()
     expiration = start + timedelta(days=30 * months)
     conn = get_db()
     cur = conn.cursor()
@@ -156,6 +332,8 @@ def add_member():
     conn.commit()
     cur.close()
     conn.close()
+    admin_user = request.headers.get("X-Admin-User", "unknown")
+    log_activity(admin_user, "ADD_MEMBER", f"Added member: {data.get('name','')}")
     return jsonify({"message": "Member added"}), 201
 
 @app.route("/members/<int:member_id>", methods=["PUT"])
@@ -171,7 +349,7 @@ def update_member(member_id):
     except (ValueError, TypeError):
         return error("Invalid numeric values.")
 
-    start_str = data.get("start_date") or datetime.now(PHT).strftime("%Y-%m-%d")
+    start_str = data.get("start_date") or datetime.now().strftime("%Y-%m-%d")
     try:
         expiration = (datetime.strptime(start_str, "%Y-%m-%d") + timedelta(days=30 * months)).strftime("%Y-%m-%d")
     except ValueError:
@@ -196,6 +374,8 @@ def update_member(member_id):
     conn.close()
     if rows_affected == 0:
         return error("Member not found.", 404)
+    admin_user = request.headers.get("X-Admin-User", "unknown")
+    log_activity(admin_user, "EDIT_MEMBER", f"Updated member ID: {member_id}")
     return jsonify({"message": "Member updated"})
 
 @app.route("/members/<int:member_id>", methods=["DELETE"])
@@ -209,6 +389,8 @@ def delete_member(member_id):
     conn.close()
     if rows_affected == 0:
         return error("Member not found.", 404)
+    admin_user = request.headers.get("X-Admin-User", "unknown")
+    log_activity(admin_user, "DELETE_MEMBER", f"Deleted member ID: {member_id}")
     return jsonify({"message": "Deleted"})
 
 # ── Attendance ────────────────────────────────────────────────────────────────
@@ -219,7 +401,7 @@ def time_in():
     member_id = data.get("member_id")
     if not member_id:
         return error("member_id is required.")
-    now = datetime.now(PHT)
+    now = datetime.now()
     today = now.strftime("%Y-%m-%d")
     time_now = now.strftime("%I:%M %p")
     conn = get_db()
@@ -253,7 +435,7 @@ def time_out():
     member_id = data.get("member_id")
     if not member_id:
         return error("member_id is required.")
-    now = datetime.now(PHT)
+    now = datetime.now()
     today = now.strftime("%Y-%m-%d")
     time_now = now.strftime("%I:%M %p")
     conn = get_db()
@@ -275,7 +457,7 @@ def time_out():
 
 @app.route("/attendance", methods=["GET"])
 def get_attendance():
-    date = request.args.get("date", datetime.now(PHT).strftime("%Y-%m-%d"))
+    date = request.args.get("date", datetime.now().strftime("%Y-%m-%d"))
     conn = get_db()
     cur = conn.cursor()
     cur.execute("SELECT * FROM attendance WHERE date=%s ORDER BY id DESC", (date,))
@@ -297,7 +479,7 @@ def get_attendance():
 
 @app.route("/walkins", methods=["GET"])
 def get_walkins():
-    date = request.args.get("date", datetime.now(PHT).strftime("%Y-%m-%d"))
+    date = request.args.get("date", datetime.now().strftime("%Y-%m-%d"))
     conn = get_db()
     cur = conn.cursor()
     cur.execute("SELECT * FROM walkins WHERE date=%s ORDER BY id DESC", (date,))
@@ -320,7 +502,7 @@ def add_walkin():
             return error("Amount must be greater than 0.")
     except (ValueError, TypeError):
         return error("Invalid amount.")
-    date = data.get("date") or datetime.now(PHT).strftime("%Y-%m-%d")
+    date = data.get("date") or datetime.now().strftime("%Y-%m-%d")
     conn = get_db()
     cur = conn.cursor()
     cur.execute(
@@ -349,14 +531,14 @@ def delete_walkin(walkin_id):
 
 @app.route("/stats", methods=["GET"])
 def stats():
-    today = datetime.now(PHT).strftime("%Y-%m-%d")
+    today = datetime.now().strftime("%Y-%m-%d")
     conn = get_db()
     cur = conn.cursor()
 
     cur.execute("SELECT COUNT(*) FROM members")
     total = cur.fetchone()[0]
 
-    cur.execute("SELECT COUNT(*) FROM members WHERE expiration_date >= TO_CHAR(CURRENT_DATE, 'YYYY-MM-DD')")
+    cur.execute("SELECT COUNT(*) FROM members WHERE expiration_date >= CURRENT_DATE")
     active = cur.fetchone()[0]
 
     cur.execute("SELECT COALESCE(SUM(price - (price * discount / 100)), 0) FROM members")
@@ -401,8 +583,8 @@ def expiring():
         days = max(1, min(int(request.args.get("days", 7)), 365))
     except ValueError:
         days = 7
-    today = datetime.now(PHT).strftime("%Y-%m-%d")
-    future = (datetime.now(PHT) + timedelta(days=days)).strftime("%Y-%m-%d")
+    today = datetime.now().strftime("%Y-%m-%d")
+    future = (datetime.now() + timedelta(days=days)).strftime("%Y-%m-%d")
     conn = get_db()
     cur = conn.cursor()
     cur.execute(
@@ -433,13 +615,13 @@ def export_csv():
     writer = csv.writer(output)
     writer.writerow(["ID", "Name", "Email", "Phone", "Plan", "Months",
                      "Price", "Discount%", "Net Price", "Start Date", "Expiration Date", "Status"])
-    today_str = datetime.now(PHT).strftime("%Y-%m-%d")
+    today_str = datetime.now().strftime("%Y-%m-%d")
     for r in rows:
         net = r["price"] - (r["price"] * r["discount"] / 100)
         exp = r["expiration_date"]
         if exp < today_str:
             status = "Expired"
-        elif (datetime.strptime(exp, "%Y-%m-%d") - datetime.now(PHT)).days <= 7:
+        elif (datetime.strptime(exp, "%Y-%m-%d") - datetime.now()).days <= 7:
             status = "Expiring Soon"
         else:
             status = "Active"
@@ -462,8 +644,8 @@ def report_excel():
     except ImportError:
         return error("openpyxl not installed.", 500)
 
-    year = request.args.get("year", datetime.now(PHT).strftime("%Y"))
-    month = request.args.get("month", datetime.now(PHT).strftime("%m")).zfill(2)
+    year = request.args.get("year", datetime.now().strftime("%Y"))
+    month = request.args.get("month", datetime.now().strftime("%m")).zfill(2)
     month_str = f"{year}-{month}"
     try:
         month_name = datetime.strptime(month_str, "%Y-%m").strftime("%B %Y")
@@ -479,7 +661,7 @@ def report_excel():
     cur.execute("SELECT * FROM members ORDER BY name ASC")
     all_members = rows_to_list(cur.fetchall(), cur)
 
-    cur.execute("SELECT * FROM members WHERE expiration_date >= TO_CHAR(CURRENT_DATE, 'YYYY-MM-DD')")
+    cur.execute("SELECT * FROM members WHERE expiration_date >= CURRENT_DATE")
     active_members = rows_to_list(cur.fetchall(), cur)
 
     cur.execute("SELECT * FROM walkins WHERE TO_CHAR(date::date,'YYYY-MM')=%s ORDER BY date ASC", (month_str,))
@@ -590,12 +772,12 @@ def report_excel():
     for i, h in enumerate(h2, 1):
         ws2.cell(row=2, column=i, value=h)
     style_header_row(ws2, 2, len(h2))
-    today_str = datetime.now(PHT).strftime("%Y-%m-%d")
+    today_str = datetime.now().strftime("%Y-%m-%d")
     for idx, m in enumerate(all_members):
         r = 3 + idx
         net = m["price"] - (m["price"] * m["discount"] / 100)
         exp = m["expiration_date"]
-        days_left = (datetime.strptime(exp, "%Y-%m-%d") - datetime.now(PHT)).days
+        days_left = (datetime.strptime(exp, "%Y-%m-%d") - datetime.now()).days
         if exp < today_str: status, color = "Expired", "FF1744"
         elif days_left <= 7: status, color = "Expiring Soon", "FFB300"
         else: status, color = "Active", GREEN
@@ -658,8 +840,8 @@ def admin_time_in():
     username = data.get("username", "").strip()
     if not username:
         return error("Username is required.")
-    today = datetime.now(PHT).strftime("%Y-%m-%d")
-    time_now = datetime.now(PHT).strftime("%I:%M %p")
+    today = datetime.now().strftime("%Y-%m-%d")
+    time_now = datetime.now().strftime("%I:%M %p")
     conn = get_db()
     cur = conn.cursor()
     # Check if already timed in today without timing out
@@ -686,8 +868,8 @@ def admin_time_out():
     username = data.get("username", "").strip()
     if not username:
         return error("Username is required.")
-    today = datetime.now(PHT).strftime("%Y-%m-%d")
-    time_now = datetime.now(PHT).strftime("%I:%M %p")
+    today = datetime.now().strftime("%Y-%m-%d")
+    time_now = datetime.now().strftime("%I:%M %p")
     conn = get_db()
     cur = conn.cursor()
     cur.execute(
@@ -709,7 +891,7 @@ def admin_time_out():
 
 @app.route("/admin/dtr", methods=["GET"])
 def get_admin_dtr():
-    date = request.args.get("date", datetime.now(PHT).strftime("%Y-%m-%d"))
+    date = request.args.get("date", datetime.now().strftime("%Y-%m-%d"))
     username = request.args.get("username", "")
     conn = get_db()
     cur = conn.cursor()
@@ -730,8 +912,8 @@ def get_admin_dtr():
 
 @app.route("/admin/dtr/all", methods=["GET"])
 def get_all_admin_dtr():
-    month = request.args.get("month", datetime.now(PHT).strftime("%m"))
-    year  = request.args.get("year",  datetime.now(PHT).strftime("%Y"))
+    month = request.args.get("month", datetime.now().strftime("%m"))
+    year  = request.args.get("year",  datetime.now().strftime("%Y"))
     prefix = f"{year}-{month.zfill(2)}"
     conn = get_db()
     cur = conn.cursor()
@@ -759,6 +941,3 @@ def delete_admin_dtr(dtr_id):
 
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
-
-
-
