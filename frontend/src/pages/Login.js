@@ -1,4 +1,4 @@
-import { useState } from "react";
+﻿import { useState } from "react";
 import axios from "axios";
 import { useNavigate } from "react-router-dom";
 import API from "../api/config";
@@ -69,14 +69,14 @@ function Login() {
         {/* Pending notice after register */}
         {mode === "register" && msg.type === "success" && (
           <div style={{ background:"rgba(232,255,0,0.06)", border:"1px solid rgba(232,255,0,0.2)", borderRadius:10, padding:"16px", marginTop:8, textAlign:"center" }}>
-            <div style={{ fontSize:32, marginBottom:8 }}>⏳</div>
+            <div style={{ fontSize:32, marginBottom:8 }}>â³</div>
             <div style={{ fontWeight:700, color:"var(--accent)", marginBottom:4 }}>Awaiting Approval</div>
             <div style={{ fontSize:12, color:"var(--muted)" }}>
               Your request has been sent to the primary admin.<br />
               You'll be able to log in once approved.
             </div>
             <button className="btn btn-ghost" style={{ marginTop:14, width:"100%" }} onClick={() => reset("login")}>
-              ← Back to Login
+              â† Back to Login
             </button>
           </div>
         )}
@@ -95,12 +95,12 @@ function Login() {
               <button className="btn btn-primary" onClick={mode==="login" ? login : register} disabled={loading}>
                 {loading
                   ? (mode==="login" ? "Signing in..." : "Submitting...")
-                  : (mode==="login" ? "Sign In →" : "Request Access")}
+                  : (mode==="login" ? "Sign In â†’" : "Request Access")}
               </button>
             </div>
             <p style={{ marginTop:24, fontSize:12, color:"var(--muted)", textAlign:"center", cursor:"pointer", textDecoration:"underline" }}
               onClick={() => reset(mode==="login" ? "register" : "login")}>
-              {mode==="login" ? "Request Admin Access" : "← Back to Login"}
+              {mode==="login" ? "Request Admin Access" : "â† Back to Login"}
             </p>
           </>
         )}
@@ -110,3 +110,4 @@ function Login() {
 }
 
 export default Login;
+
