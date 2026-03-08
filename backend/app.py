@@ -939,5 +939,98 @@ def delete_admin_dtr(dtr_id):
     return jsonify({"message": "Record deleted"})
 
 
+# ── Employee DTR ──────────────────────────────────────────────────────────────
+
+@app.route("/employee/dtr/timein", methods=["POST"])
+def employee_time_in():
+    data        = request.json or {}
+    name        = data.get("name", "").strip()
+    note        = data.get("note", "").strip()
+    recorded_by = request.headers.get("X-Admin-User", "unknown")
+    if not name:
+        return error("Employee name is required.")
+    today    = datetime.now(PHT).strftime("%Y-%m-%d")
+    time_now = datetime.now(PHT).strftime("%I:%M %p")
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("SELECT id FROM employee_dtr WHERE employee_name=%s AND date=%s AND time_out IS NULL", (name, today))
+    if cur.fetchone():
+        cur.close(); conn.close()
+        return error(f"{name} is already timed in today.")
+    cur.execute("INSERT INTO employee_dtr (employee_name, date, time_in, note, recorded_by) VALUES (%s,%s,%s,%s,%s)", (name, today, time_now, note, recorded_by))
+    conn.commit(); cur.close(); conn.close()
+    log_activity(recorded_by, "EMPLOYEE_TIMEIN", f"Time in for: {name}")
+    return jsonify({"message": f"Time in recorded for {name} at {time_now}"})
+
+
+@app.route("/employee/dtr/timeout", methods=["POST"])
+def employee_time_out():
+    data        = request.json or {}
+    name        = data.get("name", "").strip()
+    dtr_id      = data.get("id")
+    recorded_by = request.headers.get("X-Admin-User", "unknown")
+    today    = datetime.now(PHT).strftime("%Y-%m-%d")
+    time_now = datetime.now(PHT).strftime("%I:%M %p")
+    conn = get_db(); cur = conn.cursor()
+    if dtr_id:
+        cur.execute("SELECT id FROM employee_dtr WHERE id=%s AND time_out IS NULL", (dtr_id,))
+    else:
+        cur.execute("SELECT id FROM employee_dtr WHERE employee_name=%s AND date=%s AND time_out IS NULL", (name, today))
+    record = cur.fetchone()
+    if not record:
+        cur.close(); conn.close()
+        return error(f"No active time-in found for {name}.")
+    cur.execute("UPDATE employee_dtr SET time_out=%s WHERE id=%s", (time_now, record[0]))
+    conn.commit(); cur.close(); conn.close()
+    log_activity(recorded_by, "EMPLOYEE_TIMEOUT", f"Time out for: {name}")
+    return jsonify({"message": f"Time out recorded for {name} at {time_now}"})
+
+
+@app.route("/employee/dtr", methods=["GET"])
+def get_employee_dtr():
+    date = request.args.get("date", datetime.now(PHT).strftime("%Y-%m-%d"))
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("SELECT * FROM employee_dtr WHERE date=%s ORDER BY id DESC", (date,))
+    rows = rows_to_list(cur.fetchall(), cur)
+    cur.close(); conn.close()
+    return jsonify(rows)
+
+
+@app.route("/employee/dtr/all", methods=["GET"])
+def get_all_employee_dtr():
+    month  = request.args.get("month", datetime.now(PHT).strftime("%m"))
+    year   = request.args.get("year",  datetime.now(PHT).strftime("%Y"))
+    name   = request.args.get("name", "")
+    prefix = f"{year}-{month.zfill(2)}"
+    conn = get_db(); cur = conn.cursor()
+    if name:
+        cur.execute("SELECT * FROM employee_dtr WHERE date LIKE %s AND employee_name=%s ORDER BY date DESC, id DESC", (f"{prefix}%", name))
+    else:
+        cur.execute("SELECT * FROM employee_dtr WHERE date LIKE %s ORDER BY date DESC, employee_name ASC", (f"{prefix}%",))
+    rows = rows_to_list(cur.fetchall(), cur)
+    cur.close(); conn.close()
+    return jsonify(rows)
+
+
+@app.route("/employee/dtr/employees", methods=["GET"])
+def get_employee_names():
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("SELECT DISTINCT employee_name FROM employee_dtr ORDER BY employee_name ASC")
+    names = [row[0] for row in cur.fetchall()]
+    cur.close(); conn.close()
+    return jsonify(names)
+
+
+@app.route("/employee/dtr/<int:dtr_id>", methods=["DELETE"])
+def delete_employee_dtr(dtr_id):
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("DELETE FROM employee_dtr WHERE id=%s", (dtr_id,))
+    conn.commit()
+    affected = cur.rowcount
+    cur.close(); conn.close()
+    if affected == 0:
+        return error("Record not found.", 404)
+    return jsonify({"message": "Record deleted"})
+
+
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
