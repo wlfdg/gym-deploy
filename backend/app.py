@@ -1034,5 +1034,27 @@ def delete_employee_dtr(dtr_id):
     return jsonify({"message": "Record deleted"})
 
 
+
+@app.route("/owner/change-password", methods=["POST"])
+def owner_change_password():
+    data = request.json or {}
+    current_pw  = data.get("current_password", "")
+    new_pw      = data.get("new_password", "")
+    if not current_pw or not new_pw:
+        return error("All fields are required.")
+    if len(new_pw) < 6:
+        return error("New password must be at least 6 characters.")
+    conn = get_db(); cur = conn.cursor()
+    hashed_current = hashlib.sha256(current_pw.encode()).hexdigest()
+    cur.execute("SELECT username FROM admins WHERE username='owner' AND password=%s", (hashed_current,))
+    if not cur.fetchone():
+        cur.close(); conn.close()
+        return error("Current password is incorrect.")
+    hashed_new = hashlib.sha256(new_pw.encode()).hexdigest()
+    cur.execute("UPDATE admins SET password=%s WHERE username='owner'", (hashed_new,))
+    conn.commit(); cur.close(); conn.close()
+    log_activity("owner", "CHANGE_PASSWORD", "Owner changed their password")
+    return jsonify({"message": "Password changed successfully!"})
+
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
