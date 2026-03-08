@@ -93,26 +93,33 @@ def login():
     # Auto time-in: record shift start in admin_dtr
     shift_id = None
     try:
-        today     = datetime.now(PHT).strftime("%Y-%m-%d")
-        time_now  = datetime.now(PHT).strftime("%I:%M %p")
-        ts_now    = datetime.now(PHT).strftime("%Y-%m-%d %H:%M:%S")
+        today    = datetime.now(PHT).strftime("%Y-%m-%d")
+        time_now = datetime.now(PHT).strftime("%I:%M %p")
+        ts_now   = datetime.now(PHT).strftime("%Y-%m-%d %H:%M:%S")
         conn2 = get_db(); cur2 = conn2.cursor()
-        # Close any unclosed shifts first (e.g. crash or browser close)
+        # Close any unclosed shifts (crash/browser close)
         cur2.execute("""
-            UPDATE admin_dtr SET time_out=%s, shift_ts_out=%s
-            WHERE admin_username=%s AND time_out IS NULL
+            UPDATE admin_dtr
+            SET time_out = COALESCE(time_out, %s),
+                shift_ts_out = COALESCE(shift_ts_out::text, %s)::text
+            WHERE admin_username = %s AND time_out IS NULL
         """, (time_now, ts_now, admin_username))
-        # Open new shift
+        # Insert new shift row
         cur2.execute("""
             INSERT INTO admin_dtr (admin_username, date, time_in, shift_ts_in)
             VALUES (%s, %s, %s, %s)
         """, (admin_username, today, time_now, ts_now))
         conn2.commit()
-        cur2.execute("SELECT id FROM admin_dtr WHERE admin_username=%s AND time_out IS NULL ORDER BY id DESC LIMIT 1", (admin_username,))
+        cur2.execute("""
+            SELECT id FROM admin_dtr
+            WHERE admin_username=%s AND time_out IS NULL
+            ORDER BY id DESC LIMIT 1
+        """, (admin_username,))
         row = cur2.fetchone()
         shift_id = row[0] if row else None
         cur2.close(); conn2.close()
     except Exception as e:
+        log_activity(admin_username, "DTR_ERROR", f"Login DTR failed: {str(e)}")
         shift_id = None
     return jsonify({"success": True, "username": admin_username, "role": role, "shift_id": shift_id})
 
@@ -406,18 +413,75 @@ def update_member(member_id):
 
 @app.route("/members/<int:member_id>", methods=["DELETE"])
 def delete_member(member_id):
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("DELETE FROM members WHERE id=%s", (member_id,))
-    conn.commit()
-    rows_affected = cur.rowcount
-    cur.close()
-    conn.close()
-    if rows_affected == 0:
+    recorded_by = request.headers.get("X-Admin-User", "unknown")
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("SELECT name, plan FROM members WHERE id=%s", (member_id,))
+    m = cur.fetchone()
+    if not m:
+        cur.close(); conn.close()
         return error("Member not found.", 404)
-    admin_user = request.headers.get("X-Admin-User", "unknown")
-    log_activity(admin_user, "DELETE_MEMBER", f"Deleted member ID: {member_id}")
-    return jsonify({"message": "Deleted"})
+    member_name, member_plan = m[0], m[1]
+    # Check if already pending deletion
+    cur.execute("SELECT id FROM deletion_requests WHERE member_id=%s AND status='pending'", (member_id,))
+    if cur.fetchone():
+        cur.close(); conn.close()
+        return error("A deletion request for this member is already pending owner approval.")
+    # Create deletion request - owner must approve before actual deletion
+    cur.execute("""
+        INSERT INTO deletion_requests (member_id, member_name, member_plan, requested_by, status)
+        VALUES (%s, %s, %s, %s, 'pending')
+    """, (member_id, member_name, member_plan, recorded_by))
+    cur.execute("""
+        INSERT INTO notifications (type, title, message)
+        VALUES ('DELETE_REQUEST', 'Member Deletion Request', %s)
+    """, (f"{recorded_by} requested to delete member: {member_name} ({member_plan})",))
+    conn.commit(); cur.close(); conn.close()
+    log_activity(recorded_by, "DELETE_REQUEST", f"Requested deletion: {member_name} (ID:{member_id})")
+    return jsonify({"message": f"Deletion request submitted for {member_name}. Awaiting owner approval.", "pending": True})
+
+
+@app.route("/deletion-requests", methods=["GET"])
+def get_deletion_requests():
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("""
+        SELECT * FROM deletion_requests ORDER BY created_at DESC
+    """)
+    rows = rows_to_list(cur.fetchall(), cur)
+    cur.close(); conn.close()
+    return jsonify(rows)
+
+
+@app.route("/deletion-requests/<int:req_id>/approve", methods=["POST"])
+def approve_deletion(req_id):
+    recorded_by = request.headers.get("X-Admin-User", "owner")
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("SELECT member_id, member_name, requested_by FROM deletion_requests WHERE id=%s AND status='pending'", (req_id,))
+    r = cur.fetchone()
+    if not r:
+        cur.close(); conn.close()
+        return error("Request not found or already processed.", 404)
+    member_id, member_name, requested_by = r
+    cur.execute("DELETE FROM members WHERE id=%s", (member_id,))
+    cur.execute("UPDATE deletion_requests SET status='approved', reviewed_by=%s WHERE id=%s", (recorded_by, req_id))
+    conn.commit(); cur.close(); conn.close()
+    log_activity(recorded_by, "APPROVE_DELETION", f"Approved deletion of member: {member_name} (requested by {requested_by})")
+    return jsonify({"message": f"Member {member_name} deleted successfully."})
+
+
+@app.route("/deletion-requests/<int:req_id>/reject", methods=["POST"])
+def reject_deletion(req_id):
+    recorded_by = request.headers.get("X-Admin-User", "owner")
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("SELECT member_name, requested_by FROM deletion_requests WHERE id=%s AND status='pending'", (req_id,))
+    r = cur.fetchone()
+    if not r:
+        cur.close(); conn.close()
+        return error("Request not found or already processed.", 404)
+    member_name, requested_by = r
+    cur.execute("UPDATE deletion_requests SET status='rejected', reviewed_by=%s WHERE id=%s", (recorded_by, req_id))
+    conn.commit(); cur.close(); conn.close()
+    log_activity(recorded_by, "REJECT_DELETION", f"Rejected deletion of member: {member_name} (requested by {requested_by})")
+    return jsonify({"message": f"Deletion request for {member_name} rejected."})
 
 # ── Attendance ────────────────────────────────────────────────────────────────
 
@@ -531,10 +595,13 @@ def add_walkin():
     date = data.get("date") or datetime.now(PHT).strftime("%Y-%m-%d")
     conn = get_db()
     cur = conn.cursor()
+    now_ts = datetime.now(PHT).strftime("%Y-%m-%d %H:%M:%S")
     cur.execute(
         "INSERT INTO walkins (name, amount, note, date, created_at) VALUES (%s, %s, %s, %s, %s)",
-        (data["name"].strip(), amount, data.get("note", "").strip(), date)
+        (data["name"].strip(), amount, data.get("note", "").strip(), date, now_ts)
     )
+    recorded_by = request.headers.get("X-Admin-User", "unknown")
+    log_activity(recorded_by, "ADD_WALKIN", f"Recorded walk-in: {data['name'].strip()} - P{amount:.2f}")
     conn.commit()
     cur.close()
     conn.close()
@@ -542,15 +609,16 @@ def add_walkin():
 
 @app.route("/walkins/<int:walkin_id>", methods=["DELETE"])
 def delete_walkin(walkin_id):
-    conn = get_db()
-    cur = conn.cursor()
-    cur.execute("DELETE FROM walkins WHERE id=%s", (walkin_id,))
-    conn.commit()
-    rows_affected = cur.rowcount
-    cur.close()
-    conn.close()
-    if rows_affected == 0:
+    recorded_by = request.headers.get("X-Admin-User", "unknown")
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("SELECT name, amount FROM walkins WHERE id=%s", (walkin_id,))
+    w = cur.fetchone()
+    if not w:
+        cur.close(); conn.close()
         return error("Walk-in not found.", 404)
+    cur.execute("DELETE FROM walkins WHERE id=%s", (walkin_id,))
+    conn.commit(); cur.close(); conn.close()
+    log_activity(recorded_by, "DELETE_WALKIN", f"Deleted walk-in: {w[0]} - P{w[1]} (ID:{walkin_id})")
     return jsonify({"message": "Deleted"})
 
 # ── Stats ─────────────────────────────────────────────────────────────────────
