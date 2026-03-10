@@ -95,20 +95,8 @@ def login():
         today    = datetime.now(PHT).strftime("%Y-%m-%d")
         time_now = datetime.now(PHT).strftime("%Y-%m-%d %H:%M:%S")
         conn2 = get_db(); cur2 = conn2.cursor()
-        # Close any unclosed shifts first — save revenue before closing
-        cur2.execute("SELECT id, time_in FROM admin_dtr WHERE admin_username=%s AND time_out IS NULL", (admin_username,))
-        unclosed = cur2.fetchall()
-        for uc_id, uc_time_in in unclosed:
-            try:
-                cur2.execute("""
-                    SELECT COALESCE(SUM(amount),0) FROM walkins
-                    WHERE created_at >= %s AND created_at <= %s
-                """, (uc_time_in, time_now))
-                uc_revenue = float(cur2.fetchone()[0] or 0)
-            except Exception:
-                uc_revenue = 0
-            cur2.execute("UPDATE admin_dtr SET time_out=%s, shift_revenue=%s WHERE id=%s",
-                (time_now, uc_revenue, uc_id))
+        # Close any unclosed shifts first (e.g. crash/browser close)
+        cur2.execute("UPDATE admin_dtr SET time_out=%s WHERE admin_username=%s AND time_out IS NULL", (time_now, admin_username))
         # Open new shift
         cur2.execute("INSERT INTO admin_dtr (admin_username, date, time_in) VALUES (%s,%s,%s)",
             (admin_username, today, time_now))
@@ -880,12 +868,36 @@ def report_excel():
         response.headers["Content-Disposition"] = f"attachment; filename={filename}"
         response.headers["Content-Type"] = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         return response
-
+    except Exception as ex:
+        return error(f"Error generating report: {str(ex)}", 500)
 
 
     except Exception as ex:
         return error(f"Error generating report: {str(ex)}", 500)
 
+
+
+@app.route("/shifts/daily", methods=["GET"])
+def shifts_daily():
+    date = request.args.get("date", datetime.now(PHT).strftime("%Y-%m-%d"))
+    conn = get_db()
+    cur = conn.cursor()
+    try:
+        cur.execute("""
+            SELECT id, admin_username, time_in, time_out, shift_revenue,
+                   time_in AS shift_ts_in, time_out AS shift_ts_out,
+                   DATE(COALESCE(time_in, NOW())) AS date
+            FROM admin_dtr
+            WHERE DATE(COALESCE(time_in, NOW())) = %s
+            ORDER BY time_in DESC NULLS LAST
+        """, (date,))
+        shifts = rows_to_list(cur.fetchall(), cur)
+        return jsonify({"shifts": shifts})
+    except Exception as ex:
+        return error(f"Error fetching daily shifts: {str(ex)}", 500)
+    finally:
+        cur.close()
+        conn.close()
 
 @app.route("/shifts", methods=["GET"])
 def get_shifts():
