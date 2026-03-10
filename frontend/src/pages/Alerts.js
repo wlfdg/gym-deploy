@@ -2,6 +2,8 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { api } from "../api/config";
 import Layout from "../components/Layout";
 
+const WAKE_TIMEOUT_MS = 8000; // if no response in 8s, show "server waking up" message
+
 function AlertTable({ members, type }) {
   if (members.length === 0) {
     return (
@@ -42,22 +44,82 @@ function AlertTable({ members, type }) {
   );
 }
 
-function Alerts() {
-  const [data, setData]     = useState({ expiring_soon: [], expired: [] });
-  const [days, setDays]     = useState(7);
-  const [loading, setLoading] = useState(true);
-  const [error, setError]   = useState("");
-  const mounted = useRef(true);
+function LoadingState({ waking, onRetry }) {
+  if (waking) {
+    return (
+      <div style={{
+        display: "flex", flexDirection: "column", alignItems: "center",
+        justifyContent: "center", padding: "32px 16px", gap: 12
+      }}>
+        <div style={{ fontSize: 32 }}>⏳</div>
+        <div style={{ fontWeight: 700, color: "var(--accent)", fontSize: 15 }}>Server is waking up...</div>
+        <div style={{ fontSize: 12, color: "var(--muted)", textAlign: "center", maxWidth: 300 }}>
+          The backend is starting up from sleep mode.<br />This usually takes 20–40 seconds.
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
+          <div style={{
+            width: 18, height: 18, border: "2px solid rgba(232,255,0,0.2)",
+            borderTop: "2px solid #e8ff00", borderRadius: "50%",
+            animation: "spin 0.8s linear infinite"
+          }} />
+          <span style={{ fontSize: 12, color: "var(--muted)" }}>Please wait...</span>
+        </div>
+        <button className="btn btn-ghost btn-sm" style={{ marginTop: 8 }} onClick={onRetry}>
+          ↺ Retry Now
+        </button>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    );
+  }
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "32px 16px", gap: 10 }}>
+      <div style={{
+        width: 18, height: 18, border: "2px solid rgba(232,255,0,0.2)",
+        borderTop: "2px solid #e8ff00", borderRadius: "50%",
+        animation: "spin 0.8s linear infinite"
+      }} />
+      <span style={{ color: "var(--muted)", fontSize: 13 }}>Loading...</span>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
+}
 
-  useEffect(() => { return () => { mounted.current = false; }; }, []);
+function Alerts() {
+  const [data, setData]       = useState({ expiring_soon: [], expired: [] });
+  const [days, setDays]       = useState(7);
+  const [loading, setLoading] = useState(true);
+  const [waking, setWaking]   = useState(false);
+  const [error, setError]     = useState("");
+  const mounted  = useRef(true);
+  const wakeTimer = useRef(null);
+
+  useEffect(() => { return () => { mounted.current = false; clearTimeout(wakeTimer.current); }; }, []);
 
   const load = useCallback(async () => {
-    setLoading(true); setError("");
+    setLoading(true);
+    setWaking(false);
+    setError("");
+
+    // If no response in WAKE_TIMEOUT_MS, show waking message
+    wakeTimer.current = setTimeout(() => {
+      if (mounted.current) setWaking(true);
+    }, WAKE_TIMEOUT_MS);
+
     try {
       const res = await api.get(`/expiring?days=${days}`);
-      if (mounted.current) setData(res.data);
-    } catch { setError("Could not load alerts. Is the server running?"); }
-    setLoading(false);
+      clearTimeout(wakeTimer.current);
+      if (mounted.current) {
+        setData(res.data);
+        setWaking(false);
+      }
+    } catch {
+      clearTimeout(wakeTimer.current);
+      if (mounted.current) {
+        setError("Could not load alerts. The server may be unavailable.");
+        setWaking(false);
+      }
+    }
+    if (mounted.current) setLoading(false);
   }, [days]);
 
   useEffect(() => { load(); }, [load]);
@@ -75,9 +137,17 @@ function Alerts() {
           <button key={d} className={`btn ${days === d ? "btn-primary" : "btn-ghost"} btn-sm`}
             onClick={() => setDays(d)}>{d} days</button>
         ))}
+        <button className="btn btn-ghost btn-sm" onClick={load} disabled={loading}>
+          ↺ Refresh
+        </button>
       </div>
 
-      {error && <div className="error-msg" style={{ marginBottom: 20 }}>{error}</div>}
+      {error && (
+        <div className="error-msg" style={{ marginBottom: 20, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
+          <span>⚠ {error}</span>
+          <button className="btn btn-ghost btn-sm" onClick={load}>Retry</button>
+        </div>
+      )}
 
       <div className="alerts-section">
         <h3>
@@ -85,7 +155,9 @@ function Alerts() {
           <span className="badge badge-expiring" style={{ marginLeft: 10 }}>{data.expiring_soon.length}</span>
         </h3>
         <div className="card">
-          {loading ? <div className="empty-state">Loading...</div> : <AlertTable members={data.expiring_soon} type="expiring" />}
+          {loading
+            ? <LoadingState waking={waking} onRetry={load} />
+            : <AlertTable members={data.expiring_soon} type="expiring" />}
         </div>
       </div>
 
@@ -95,7 +167,9 @@ function Alerts() {
           <span className="badge badge-expired" style={{ marginLeft: 10 }}>{data.expired.length}</span>
         </h3>
         <div className="card">
-          {loading ? <div className="empty-state">Loading...</div> : <AlertTable members={data.expired} type="expired" />}
+          {loading
+            ? <LoadingState waking={waking} onRetry={load} />
+            : <AlertTable members={data.expired} type="expired" />}
         </div>
       </div>
     </Layout>

@@ -2,6 +2,48 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { api, clearCache } from "../api/config";
 import Layout from "../components/Layout";
 
+const WAKE_TIMEOUT_MS = 8000;
+
+function LoadingState({ waking, onRetry }) {
+  if (waking) {
+    return (
+      <div style={{
+        display: "flex", flexDirection: "column", alignItems: "center",
+        justifyContent: "center", padding: "32px 16px", gap: 12
+      }}>
+        <div style={{ fontSize: 32 }}>⏳</div>
+        <div style={{ fontWeight: 700, color: "var(--accent)", fontSize: 15 }}>Server is waking up...</div>
+        <div style={{ fontSize: 12, color: "var(--muted)", textAlign: "center", maxWidth: 300 }}>
+          The backend is starting up from sleep mode.<br />This usually takes 20–40 seconds.
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 4 }}>
+          <div style={{
+            width: 18, height: 18, border: "2px solid rgba(232,255,0,0.2)",
+            borderTop: "2px solid #e8ff00", borderRadius: "50%",
+            animation: "spin 0.8s linear infinite"
+          }} />
+          <span style={{ fontSize: 12, color: "var(--muted)" }}>Please wait...</span>
+        </div>
+        <button className="btn btn-ghost btn-sm" style={{ marginTop: 8 }} onClick={onRetry}>
+          ↺ Retry Now
+        </button>
+        <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      </div>
+    );
+  }
+  return (
+    <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: "32px 16px", gap: 10 }}>
+      <div style={{
+        width: 18, height: 18, border: "2px solid rgba(232,255,0,0.2)",
+        borderTop: "2px solid #e8ff00", borderRadius: "50%",
+        animation: "spin 0.8s linear infinite"
+      }} />
+      <span style={{ color: "var(--muted)", fontSize: 13 }}>Loading...</span>
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+    </div>
+  );
+}
+
 function Walkins() {
   const [data, setData]         = useState({ walkins:[], total:0, date:"" });
   const [name, setName]         = useState("");
@@ -9,20 +51,38 @@ function Walkins() {
   const [note, setNote]         = useState("");
   const [selectedDate, setSelectedDate] = useState(()=>new Date().toISOString().split("T")[0]);
   const [loading, setLoading]   = useState(true);
+  const [waking, setWaking]     = useState(false);
   const [adding, setAdding]     = useState(false);
   const [error, setError]       = useState("");
   const [successMsg, setSuccessMsg] = useState("");
-  const mounted = useRef(true);
-  const today   = new Date().toISOString().split("T")[0];
-  const isToday = selectedDate===today;
+  const mounted   = useRef(true);
+  const wakeTimer = useRef(null);
+  const today     = new Date().toISOString().split("T")[0];
+  const isToday   = selectedDate === today;
 
-  useEffect(() => { return () => { mounted.current=false; }; }, []);
+  useEffect(() => { return () => { mounted.current = false; clearTimeout(wakeTimer.current); }; }, []);
 
   const fetchWalkins = useCallback(async () => {
-    setLoading(true); setError("");
-    try { const res = await api.get(`/walkins?date=${selectedDate}`); if (mounted.current) setData(res.data); }
-    catch { setError("Could not load walk-in data."); }
-    setLoading(false);
+    setLoading(true);
+    setWaking(false);
+    setError("");
+
+    wakeTimer.current = setTimeout(() => {
+      if (mounted.current) setWaking(true);
+    }, WAKE_TIMEOUT_MS);
+
+    try {
+      const res = await api.get(`/walkins?date=${selectedDate}`);
+      clearTimeout(wakeTimer.current);
+      if (mounted.current) { setData(res.data); setWaking(false); }
+    } catch {
+      clearTimeout(wakeTimer.current);
+      if (mounted.current) {
+        setError("Could not load walk-in data. The server may be starting up.");
+        setWaking(false);
+      }
+    }
+    if (mounted.current) setLoading(false);
   }, [selectedDate]);
 
   useEffect(() => { fetchWalkins(); }, [fetchWalkins]);
@@ -75,7 +135,12 @@ function Walkins() {
         </div>
       </div>
 
-      {error      && <div className="error-msg" style={{marginBottom:16}}>{error}</div>}
+      {error && (
+        <div className="error-msg" style={{marginBottom:16, display:"flex", alignItems:"center", justifyContent:"space-between", gap:12}}>
+          <span>⚠ {error}</span>
+          <button className="btn btn-ghost btn-sm" onClick={fetchWalkins}>Retry</button>
+        </div>
+      )}
       {successMsg && (
         <div style={{background:"rgba(0,230,118,0.1)",border:"1px solid rgba(0,230,118,0.3)",color:"var(--success)",padding:"12px 16px",borderRadius:8,fontSize:13,fontWeight:600,marginBottom:16}}>
           ✅ {successMsg}
@@ -116,35 +181,40 @@ function Walkins() {
       <div className="card">
         <div className="log-header">
           <h3 style={{fontSize:22}}>Entries</h3>
-          <span style={{fontSize:13,color:"var(--muted)"}}>{selectedDate}</span>
+          <div style={{display:"flex",gap:8,alignItems:"center"}}>
+            <span style={{fontSize:13,color:"var(--muted)"}}>{selectedDate}</span>
+            <button className="btn btn-ghost btn-sm" onClick={fetchWalkins} disabled={loading}>↺</button>
+          </div>
         </div>
-        {loading ? <div className="empty-state">Loading...</div>
-          : data.walkins.length===0 ? <div className="empty-state">No walk-ins recorded for {selectedDate}.</div>
-          : (
-            <div className="table-wrap">
-              <table>
-                <thead><tr><th>#</th><th>Name</th><th>Amount</th><th>Note</th><th>Action</th></tr></thead>
-                <tbody>
-                  {data.walkins.map((w,i) => (
-                    <tr key={w.id}>
-                      <td style={{color:"var(--muted)",fontSize:12}}>{i+1}</td>
-                      <td style={{fontWeight:600}}>{w.name}</td>
-                      <td style={{color:"var(--accent)",fontWeight:600}}>₱{Number(w.amount).toLocaleString()}</td>
-                      <td style={{color:"var(--muted)",fontSize:12}}>{w.note||"—"}</td>
-                      <td><button className="btn btn-danger btn-sm" onClick={()=>deleteWalkin(w.id)}>Remove</button></td>
+        {loading
+          ? <LoadingState waking={waking} onRetry={fetchWalkins} />
+          : data.walkins.length===0
+            ? <div className="empty-state">No walk-ins recorded for {selectedDate}.</div>
+            : (
+              <div className="table-wrap">
+                <table>
+                  <thead><tr><th>#</th><th>Name</th><th>Amount</th><th>Note</th><th>Action</th></tr></thead>
+                  <tbody>
+                    {data.walkins.map((w,i) => (
+                      <tr key={w.id}>
+                        <td style={{color:"var(--muted)",fontSize:12}}>{i+1}</td>
+                        <td style={{fontWeight:600}}>{w.name}</td>
+                        <td style={{color:"var(--accent)",fontWeight:600}}>₱{Number(w.amount).toLocaleString()}</td>
+                        <td style={{color:"var(--muted)",fontSize:12}}>{w.note||"—"}</td>
+                        <td><button className="btn btn-danger btn-sm" onClick={()=>deleteWalkin(w.id)}>Remove</button></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                  <tfoot>
+                    <tr>
+                      <td colSpan="2" style={{fontWeight:700,fontSize:13,paddingTop:14,color:"var(--muted)",textTransform:"uppercase",letterSpacing:1}}>Total</td>
+                      <td style={{fontFamily:"'Bebas Neue',cursive",fontSize:24,color:"var(--accent)",paddingTop:14}}>₱{data.total.toLocaleString()}</td>
+                      <td colSpan="2" />
                     </tr>
-                  ))}
-                </tbody>
-                <tfoot>
-                  <tr>
-                    <td colSpan="2" style={{fontWeight:700,fontSize:13,paddingTop:14,color:"var(--muted)",textTransform:"uppercase",letterSpacing:1}}>Total</td>
-                    <td style={{fontFamily:"'Bebas Neue',cursive",fontSize:24,color:"var(--accent)",paddingTop:14}}>₱{data.total.toLocaleString()}</td>
-                    <td colSpan="2" />
-                  </tr>
-                </tfoot>
-              </table>
-            </div>
-          )}
+                  </tfoot>
+                </table>
+              </div>
+            )}
       </div>
     </Layout>
   );
