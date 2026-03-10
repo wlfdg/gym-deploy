@@ -95,8 +95,20 @@ def login():
         today    = datetime.now(PHT).strftime("%Y-%m-%d")
         time_now = datetime.now(PHT).strftime("%Y-%m-%d %H:%M:%S")
         conn2 = get_db(); cur2 = conn2.cursor()
-        # Close any unclosed shifts first (e.g. crash/browser close)
-        cur2.execute("UPDATE admin_dtr SET time_out=%s WHERE admin_username=%s AND time_out IS NULL", (time_now, admin_username))
+        # Close any unclosed shifts first — save revenue before closing
+        cur2.execute("SELECT id, time_in FROM admin_dtr WHERE admin_username=%s AND time_out IS NULL", (admin_username,))
+        unclosed = cur2.fetchall()
+        for uc_id, uc_time_in in unclosed:
+            try:
+                cur2.execute("""
+                    SELECT COALESCE(SUM(amount),0) FROM walkins
+                    WHERE created_at >= %s AND created_at <= %s
+                """, (uc_time_in, time_now))
+                uc_revenue = float(cur2.fetchone()[0] or 0)
+            except Exception:
+                uc_revenue = 0
+            cur2.execute("UPDATE admin_dtr SET time_out=%s, shift_revenue=%s WHERE id=%s",
+                (time_now, uc_revenue, uc_id))
         # Open new shift
         cur2.execute("INSERT INTO admin_dtr (admin_username, date, time_in) VALUES (%s,%s,%s)",
             (admin_username, today, time_now))
@@ -526,9 +538,10 @@ def add_walkin():
     date = data.get("date") or datetime.now(PHT).strftime("%Y-%m-%d")
     conn = get_db()
     cur = conn.cursor()
+    now_ts = datetime.now(PHT).strftime("%Y-%m-%d %H:%M:%S")
     cur.execute(
         "INSERT INTO walkins (name, amount, note, date, created_at) VALUES (%s, %s, %s, %s, %s)",
-        (data["name"].strip(), amount, data.get("note", "").strip(), date)
+        (data["name"].strip(), amount, data.get("note", "").strip(), date, now_ts)
     )
     conn.commit()
     cur.close()
@@ -579,10 +592,9 @@ def stats():
         if row:
             shift_start = row[0]
     if shift_start:
-        now_str = datetime.now(PHT).strftime("%Y-%m-%d %H:%M:%S")
-        cur.execute("SELECT COALESCE(SUM(amount),0) FROM walkins WHERE created_at >= %s AND created_at <= %s", (shift_start, now_str))
+        cur.execute("SELECT COALESCE(SUM(amount),0) FROM walkins WHERE created_at >= %s", (shift_start,))
         walkin_today = cur.fetchone()[0]
-        cur.execute("SELECT COUNT(*) FROM walkins WHERE created_at >= %s AND created_at <= %s", (shift_start, now_str))
+        cur.execute("SELECT COUNT(*) FROM walkins WHERE created_at >= %s", (shift_start,))
         walkin_count = cur.fetchone()[0]
     else:
         cur.execute("SELECT COALESCE(SUM(amount), 0) FROM walkins WHERE date=%s", (today,))
@@ -680,16 +692,16 @@ def report_excel():
         from openpyxl.utils import get_column_letter
     except ImportError:
         return error("openpyxl not installed.", 500)
-
-    year = request.args.get("year", datetime.now(PHT).strftime("%Y"))
-    month = request.args.get("month", datetime.now(PHT).strftime("%m")).zfill(2)
-    month_str = f"{year}-{month}"
     try:
-        month_name = datetime.strptime(month_str, "%Y-%m").strftime("%B %Y")
-    except ValueError:
-        return error("Invalid year/month.")
 
-    try:
+        year = request.args.get("year", datetime.now(PHT).strftime("%Y"))
+        month = request.args.get("month", datetime.now(PHT).strftime("%m")).zfill(2)
+        month_str = f"{year}-{month}"
+        try:
+            month_name = datetime.strptime(month_str, "%Y-%m").strftime("%B %Y")
+        except ValueError:
+            return error("Invalid year/month.")
+
         conn = get_db()
         cur = conn.cursor()
 
@@ -868,9 +880,11 @@ def report_excel():
         response.headers["Content-Disposition"] = f"attachment; filename={filename}"
         response.headers["Content-Type"] = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         return response
+
+
+
     except Exception as ex:
         return error(f"Error generating report: {str(ex)}", 500)
-
 
 
 @app.route("/shifts", methods=["GET"])
@@ -914,23 +928,6 @@ def get_shifts():
                 pass
     cur.close(); conn.close()
     return jsonify({"shifts": rows, "summary": list(summary.values())})
-
-
-@app.route("/shifts/daily", methods=["GET"])
-def get_shifts_daily():
-    """Return all shifts for a specific date."""
-    date = request.args.get("date", datetime.now(PHT).strftime("%Y-%m-%d"))
-    conn = get_db(); cur = conn.cursor()
-    cur.execute("""
-        SELECT id, admin_username, date, time_in, time_out,
-               COALESCE(shift_revenue, 0) AS shift_revenue
-        FROM admin_dtr
-        WHERE date = %s
-        ORDER BY time_in ASC
-    """, (date,))
-    rows = rows_to_list(cur.fetchall(), cur)
-    cur.close(); conn.close()
-    return jsonify({"shifts": rows, "date": date})
 
 
 # ── Admin DTR ─────────────────────────────────────────────────────────────────
