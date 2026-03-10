@@ -91,35 +91,23 @@ def login():
         return error("Your account has been disabled. Contact the primary admin.", 403)
     log_activity(admin_username, "LOGIN", f"Logged in")
     # Auto time-in: record shift start in admin_dtr
-    shift_id = None
     try:
         today    = datetime.now(PHT).strftime("%Y-%m-%d")
-        time_now = datetime.now(PHT).strftime("%I:%M %p")
-        ts_now   = datetime.now(PHT).strftime("%Y-%m-%d %H:%M:%S")
+        time_now = datetime.now(PHT).strftime("%Y-%m-%d %H:%M:%S")
         conn2 = get_db(); cur2 = conn2.cursor()
-        # Close any unclosed shifts (crash/browser close)
-        cur2.execute("""
-            UPDATE admin_dtr
-            SET time_out = COALESCE(time_out, %s),
-                shift_ts_out = COALESCE(shift_ts_out, %s::timestamp)
-            WHERE admin_username = %s AND time_out IS NULL
-        """, (time_now, ts_now, admin_username))
-        # Insert new shift row
-        cur2.execute("""
-            INSERT INTO admin_dtr (admin_username, date, time_in, shift_ts_in)
-            VALUES (%s, %s, %s, %s::timestamp)
-        """, (admin_username, today, time_now, ts_now))
+        # Close any unclosed shifts first (e.g. crash/browser close)
+        cur2.execute("UPDATE admin_dtr SET time_out=%s WHERE admin_username=%s AND time_out IS NULL", (time_now, admin_username))
+        # Open new shift
+        cur2.execute("INSERT INTO admin_dtr (admin_username, date, time_in) VALUES (%s,%s,%s)",
+            (admin_username, today, time_now))
         conn2.commit()
-        cur2.execute("""
-            SELECT id FROM admin_dtr
-            WHERE admin_username=%s AND time_out IS NULL
-            ORDER BY id DESC LIMIT 1
-        """, (admin_username,))
+        shift_id = cur2.lastrowid if cur2.lastrowid else None
+        # Get shift_id via SELECT since lastrowid may not work with psycopg2
+        cur2.execute("SELECT id FROM admin_dtr WHERE admin_username=%s AND time_out IS NULL ORDER BY id DESC LIMIT 1", (admin_username,))
         row = cur2.fetchone()
         shift_id = row[0] if row else None
         cur2.close(); conn2.close()
-    except Exception as e:
-        log_activity(admin_username, "DTR_ERROR", f"Login DTR failed: {str(e)}")
+    except Exception:
         shift_id = None
     return jsonify({"success": True, "username": admin_username, "role": role, "shift_id": shift_id})
 
@@ -413,75 +401,18 @@ def update_member(member_id):
 
 @app.route("/members/<int:member_id>", methods=["DELETE"])
 def delete_member(member_id):
-    recorded_by = request.headers.get("X-Admin-User", "unknown")
-    conn = get_db(); cur = conn.cursor()
-    cur.execute("SELECT name, plan FROM members WHERE id=%s", (member_id,))
-    m = cur.fetchone()
-    if not m:
-        cur.close(); conn.close()
-        return error("Member not found.", 404)
-    member_name, member_plan = m[0], m[1]
-    # Check if already pending deletion
-    cur.execute("SELECT id FROM deletion_requests WHERE member_id=%s AND status='pending'", (member_id,))
-    if cur.fetchone():
-        cur.close(); conn.close()
-        return error("A deletion request for this member is already pending owner approval.")
-    # Create deletion request - owner must approve before actual deletion
-    cur.execute("""
-        INSERT INTO deletion_requests (member_id, member_name, member_plan, requested_by, status)
-        VALUES (%s, %s, %s, %s, 'pending')
-    """, (member_id, member_name, member_plan, recorded_by))
-    cur.execute("""
-        INSERT INTO notifications (type, title, message)
-        VALUES ('DELETE_REQUEST', 'Member Deletion Request', %s)
-    """, (f"{recorded_by} requested to delete member: {member_name} ({member_plan})",))
-    conn.commit(); cur.close(); conn.close()
-    log_activity(recorded_by, "DELETE_REQUEST", f"Requested deletion: {member_name} (ID:{member_id})")
-    return jsonify({"message": f"Deletion request submitted for {member_name}. Awaiting owner approval.", "pending": True})
-
-
-@app.route("/deletion-requests", methods=["GET"])
-def get_deletion_requests():
-    conn = get_db(); cur = conn.cursor()
-    cur.execute("""
-        SELECT * FROM deletion_requests ORDER BY created_at DESC
-    """)
-    rows = rows_to_list(cur.fetchall(), cur)
-    cur.close(); conn.close()
-    return jsonify(rows)
-
-
-@app.route("/deletion-requests/<int:req_id>/approve", methods=["POST"])
-def approve_deletion(req_id):
-    recorded_by = request.headers.get("X-Admin-User", "owner")
-    conn = get_db(); cur = conn.cursor()
-    cur.execute("SELECT member_id, member_name, requested_by FROM deletion_requests WHERE id=%s AND status='pending'", (req_id,))
-    r = cur.fetchone()
-    if not r:
-        cur.close(); conn.close()
-        return error("Request not found or already processed.", 404)
-    member_id, member_name, requested_by = r
+    conn = get_db()
+    cur = conn.cursor()
     cur.execute("DELETE FROM members WHERE id=%s", (member_id,))
-    cur.execute("UPDATE deletion_requests SET status='approved', reviewed_by=%s WHERE id=%s", (recorded_by, req_id))
-    conn.commit(); cur.close(); conn.close()
-    log_activity(recorded_by, "APPROVE_DELETION", f"Approved deletion of member: {member_name} (requested by {requested_by})")
-    return jsonify({"message": f"Member {member_name} deleted successfully."})
-
-
-@app.route("/deletion-requests/<int:req_id>/reject", methods=["POST"])
-def reject_deletion(req_id):
-    recorded_by = request.headers.get("X-Admin-User", "owner")
-    conn = get_db(); cur = conn.cursor()
-    cur.execute("SELECT member_name, requested_by FROM deletion_requests WHERE id=%s AND status='pending'", (req_id,))
-    r = cur.fetchone()
-    if not r:
-        cur.close(); conn.close()
-        return error("Request not found or already processed.", 404)
-    member_name, requested_by = r
-    cur.execute("UPDATE deletion_requests SET status='rejected', reviewed_by=%s WHERE id=%s", (recorded_by, req_id))
-    conn.commit(); cur.close(); conn.close()
-    log_activity(recorded_by, "REJECT_DELETION", f"Rejected deletion of member: {member_name} (requested by {requested_by})")
-    return jsonify({"message": f"Deletion request for {member_name} rejected."})
+    conn.commit()
+    rows_affected = cur.rowcount
+    cur.close()
+    conn.close()
+    if rows_affected == 0:
+        return error("Member not found.", 404)
+    admin_user = request.headers.get("X-Admin-User", "unknown")
+    log_activity(admin_user, "DELETE_MEMBER", f"Deleted member ID: {member_id}")
+    return jsonify({"message": "Deleted"})
 
 # ── Attendance ────────────────────────────────────────────────────────────────
 
@@ -595,13 +526,10 @@ def add_walkin():
     date = data.get("date") or datetime.now(PHT).strftime("%Y-%m-%d")
     conn = get_db()
     cur = conn.cursor()
-    now_ts = datetime.now(PHT).strftime("%Y-%m-%d %H:%M:%S")
     cur.execute(
         "INSERT INTO walkins (name, amount, note, date, created_at) VALUES (%s, %s, %s, %s, %s)",
-        (data["name"].strip(), amount, data.get("note", "").strip(), date, now_ts)
+        (data["name"].strip(), amount, data.get("note", "").strip(), date)
     )
-    recorded_by = request.headers.get("X-Admin-User", "unknown")
-    log_activity(recorded_by, "ADD_WALKIN", f"Recorded walk-in: {data['name'].strip()} - P{amount:.2f}")
     conn.commit()
     cur.close()
     conn.close()
@@ -609,16 +537,15 @@ def add_walkin():
 
 @app.route("/walkins/<int:walkin_id>", methods=["DELETE"])
 def delete_walkin(walkin_id):
-    recorded_by = request.headers.get("X-Admin-User", "unknown")
-    conn = get_db(); cur = conn.cursor()
-    cur.execute("SELECT name, amount FROM walkins WHERE id=%s", (walkin_id,))
-    w = cur.fetchone()
-    if not w:
-        cur.close(); conn.close()
-        return error("Walk-in not found.", 404)
+    conn = get_db()
+    cur = conn.cursor()
     cur.execute("DELETE FROM walkins WHERE id=%s", (walkin_id,))
-    conn.commit(); cur.close(); conn.close()
-    log_activity(recorded_by, "DELETE_WALKIN", f"Deleted walk-in: {w[0]} - P{w[1]} (ID:{walkin_id})")
+    conn.commit()
+    rows_affected = cur.rowcount
+    cur.close()
+    conn.close()
+    if rows_affected == 0:
+        return error("Walk-in not found.", 404)
     return jsonify({"message": "Deleted"})
 
 # ── Stats ─────────────────────────────────────────────────────────────────────
@@ -647,14 +574,15 @@ def stats():
     shift_id = request.args.get("shift_id")
     shift_start = None
     if shift_id:
-        cur.execute("SELECT shift_ts_in FROM admin_dtr WHERE id=%s AND time_out IS NULL", (shift_id,))
+        cur.execute("SELECT time_in FROM admin_dtr WHERE id=%s AND time_out IS NULL", (shift_id,))
         row = cur.fetchone()
         if row:
             shift_start = row[0]
     if shift_start:
-        cur.execute("SELECT COALESCE(SUM(amount),0) FROM walkins WHERE created_at >= %s", (shift_start,))
+        now_str = datetime.now(PHT).strftime("%Y-%m-%d %H:%M:%S")
+        cur.execute("SELECT COALESCE(SUM(amount),0) FROM walkins WHERE created_at >= %s AND created_at <= %s", (shift_start, now_str))
         walkin_today = cur.fetchone()[0]
-        cur.execute("SELECT COUNT(*) FROM walkins WHERE created_at >= %s", (shift_start,))
+        cur.execute("SELECT COUNT(*) FROM walkins WHERE created_at >= %s AND created_at <= %s", (shift_start, now_str))
         walkin_count = cur.fetchone()[0]
     else:
         cur.execute("SELECT COALESCE(SUM(amount), 0) FROM walkins WHERE date=%s", (today,))
@@ -752,15 +680,16 @@ def report_excel():
         from openpyxl.utils import get_column_letter
     except ImportError:
         return error("openpyxl not installed.", 500)
-    try:
-        year = request.args.get("year", datetime.now(PHT).strftime("%Y"))
-        month = request.args.get("month", datetime.now(PHT).strftime("%m")).zfill(2)
-        month_str = f"{year}-{month}"
-        try:
-            month_name = datetime.strptime(month_str, "%Y-%m").strftime("%B %Y")
-        except ValueError:
-            return error("Invalid year/month.")
 
+    year = request.args.get("year", datetime.now(PHT).strftime("%Y"))
+    month = request.args.get("month", datetime.now(PHT).strftime("%m")).zfill(2)
+    month_str = f"{year}-{month}"
+    try:
+        month_name = datetime.strptime(month_str, "%Y-%m").strftime("%B %Y")
+    except ValueError:
+        return error("Invalid year/month.")
+
+    try:
         conn = get_db()
         cur = conn.cursor()
 
@@ -976,15 +905,32 @@ def get_shifts():
             summary[u] = {"admin": u, "total_shifts": 0, "total_revenue": 0.0, "total_hours": 0.0}
         summary[u]["total_shifts"] += 1
         summary[u]["total_revenue"] += float(r["shift_revenue"] or 0)
-        if r.get("shift_ts_in") and r.get("shift_ts_out"):
+        if r["time_in"] and r["time_out"]:
             try:
-                ti = datetime.strptime(str(r["shift_ts_in"])[:19], "%Y-%m-%d %H:%M:%S")
-                to = datetime.strptime(str(r["shift_ts_out"])[:19], "%Y-%m-%d %H:%M:%S")
+                ti = datetime.strptime(str(r["time_in"])[:19], "%Y-%m-%d %H:%M:%S")
+                to = datetime.strptime(str(r["time_out"])[:19], "%Y-%m-%d %H:%M:%S")
                 summary[u]["total_hours"] += round((to - ti).seconds / 3600, 2)
             except Exception:
                 pass
     cur.close(); conn.close()
     return jsonify({"shifts": rows, "summary": list(summary.values())})
+
+
+@app.route("/shifts/daily", methods=["GET"])
+def get_shifts_daily():
+    """Return all shifts for a specific date."""
+    date = request.args.get("date", datetime.now(PHT).strftime("%Y-%m-%d"))
+    conn = get_db(); cur = conn.cursor()
+    cur.execute("""
+        SELECT id, admin_username, date, time_in, time_out,
+               COALESCE(shift_revenue, 0) AS shift_revenue
+        FROM admin_dtr
+        WHERE date = %s
+        ORDER BY time_in ASC
+    """, (date,))
+    rows = rows_to_list(cur.fetchall(), cur)
+    cur.close(); conn.close()
+    return jsonify({"shifts": rows, "date": date})
 
 
 # ── Admin DTR ─────────────────────────────────────────────────────────────────
@@ -1101,32 +1047,29 @@ def logout():
     shift_id = data.get("shift_id")
     if not username:
         return jsonify({"message": "Logged out"})
-    time_now  = datetime.now(PHT).strftime("%I:%M %p")
-    ts_now    = datetime.now(PHT).strftime("%Y-%m-%d %H:%M:%S")
+    now_str = datetime.now(PHT).strftime("%Y-%m-%d %H:%M:%S")
     conn = get_db(); cur = conn.cursor()
     # Find the open shift
     if shift_id:
-        cur.execute("SELECT id, shift_ts_in FROM admin_dtr WHERE id=%s AND time_out IS NULL", (shift_id,))
+        cur.execute("SELECT id, time_in FROM admin_dtr WHERE id=%s AND time_out IS NULL", (shift_id,))
     else:
-        cur.execute("SELECT id, shift_ts_in FROM admin_dtr WHERE admin_username=%s AND time_out IS NULL ORDER BY id DESC LIMIT 1", (username,))
+        cur.execute("SELECT id, time_in FROM admin_dtr WHERE admin_username=%s AND time_out IS NULL ORDER BY id DESC LIMIT 1", (username,))
     record = cur.fetchone()
     shift_revenue = 0
     if record:
-        open_id  = record[0]
-        ts_in    = record[1]
+        open_id   = record[0]
+        time_in   = record[1]
         # Calculate walk-in revenue collected during this shift
         try:
             cur.execute("""
                 SELECT COALESCE(SUM(amount),0) FROM walkins
                 WHERE created_at >= %s AND created_at <= %s
-            """, (ts_in, ts_now))
+            """, (time_in, now_str))
             shift_revenue = float(cur.fetchone()[0] or 0)
         except Exception:
             shift_revenue = 0
-        cur.execute("""
-            UPDATE admin_dtr SET time_out=%s, shift_ts_out=%s::timestamp, shift_revenue=%s
-            WHERE id=%s
-        """, (time_now, ts_now, shift_revenue, open_id))
+        cur.execute("UPDATE admin_dtr SET time_out=%s, shift_revenue=%s WHERE id=%s",
+            (now_str, shift_revenue, open_id))
         conn.commit()
     cur.close(); conn.close()
     log_activity(username, "LOGOUT", f"Admin logged out. Shift revenue: P{shift_revenue:,.2f}")
