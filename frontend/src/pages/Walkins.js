@@ -2,6 +2,12 @@ import { useEffect, useState, useCallback, useRef } from "react";
 import { api, clearCache } from "../api/config";
 import Layout from "../components/Layout";
 
+// ── Local date helper — avoids UTC offset giving wrong date in PHT (+8) ──────
+function localDateStr(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+}
+
+
 const WAKE_TIMEOUT_MS = 8000;
 
 function LoadingState({ waking, onRetry }) {
@@ -49,7 +55,7 @@ function Walkins() {
   const [name, setName]         = useState("");
   const [amount, setAmount]     = useState("");
   const [note, setNote]         = useState("");
-  const [selectedDate, setSelectedDate] = useState(()=>new Date().toISOString().split("T")[0]);
+  const [selectedDate, setSelectedDate] = useState(()=>localDateStr(new Date()));
   const [loading, setLoading]   = useState(true);
   const [waking, setWaking]     = useState(false);
   const [adding, setAdding]     = useState(false);
@@ -57,7 +63,7 @@ function Walkins() {
   const [successMsg, setSuccessMsg] = useState("");
   const mounted   = useRef(true);
   const wakeTimer = useRef(null);
-  const today     = new Date().toISOString().split("T")[0];
+  const today     = localDateStr(new Date());
   const isToday   = selectedDate === today;
 
   useEffect(() => { return () => { mounted.current = false; clearTimeout(wakeTimer.current); }; }, []);

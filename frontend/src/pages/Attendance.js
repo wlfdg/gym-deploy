@@ -2,6 +2,12 @@ import { useEffect, useState, useRef, useCallback } from "react";
 import { api, clearCache } from "../api/config";
 import Layout from "../components/Layout";
 
+// ── Local date helper — avoids UTC offset giving wrong date in PHT (+8) ──────
+function localDateStr(d) {
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+}
+
+
 function parseTime(t) {
   if (!t) return null;
   const match = t.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/i);
@@ -22,13 +28,13 @@ function formatDuration(timeIn, timeOut) {
 function Attendance() {
   const [members, setMembers]   = useState([]);
   const [data, setData]         = useState({ records:[], total:0, still_in:0, date:"" });
-  const [selectedDate, setSelectedDate] = useState(()=>new Date().toISOString().split("T")[0]);
+  const [selectedDate, setSelectedDate] = useState(()=>localDateStr(new Date()));
   const [search, setSearch]     = useState("");
   const [loading, setLoading]   = useState(true);
   const [actionMsg, setActionMsg] = useState(null);
   const [error, setError]       = useState("");
   const mounted = useRef(true);
-  const today   = new Date().toISOString().split("T")[0];
+  const today   = localDateStr(new Date());
   const isToday = selectedDate === today;
 
   useEffect(() => { return () => { mounted.current = false; }; }, []);
