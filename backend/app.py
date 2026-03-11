@@ -872,8 +872,6 @@ def report_excel():
         return error(f"Error generating report: {str(ex)}", 500)
 
 
-    except Exception as ex:
-        return error(f"Error generating report: {str(ex)}", 500)
 
 
 
