@@ -785,9 +785,9 @@ def report_excel():
             ("NEW THIS MONTH", len(new_members), YELLOW),
             ("WALK-INS", len(walkins), "00B0FF"),
             ("ATTENDANCE LOGS", len(attendance), "FF9100"),
-            ("MEMBER REVENUE", f"₱{member_revenue:,.2f}", GREEN),
-            ("WALKIN REVENUE", f"₱{walkin_revenue:,.2f}", YELLOW),
-            ("TOTAL REVENUE", f"₱{total_revenue:,.2f}", "FF4D00"),
+            ("MEMBER REVENUE", f"PHP {member_revenue:,.2f}", GREEN),
+            ("WALKIN REVENUE", f"PHP {walkin_revenue:,.2f}", YELLOW),
+            ("TOTAL REVENUE", f"PHP {total_revenue:,.2f}", "FF4D00"),
         ]
         for col, (label, value, color) in enumerate(kpis, 1):
             lc = ws1.cell(row=5, column=col, value=label)
@@ -814,9 +814,12 @@ def report_excel():
         for idx, m in enumerate(all_members):
             r = 3 + idx
             net = m["price"] - (m["price"] * m["discount"] / 100)
-            exp = m["expiration_date"]
-            days_left = (datetime.strptime(exp, "%Y-%m-%d") - datetime.now(PHT)).days
-            if exp < today_str: status, color = "Expired", "FF1744"
+            exp = m["expiration_date"] or ""
+            try:
+                days_left = (datetime.strptime(exp, "%Y-%m-%d") - datetime.now(PHT)).days
+            except Exception:
+                days_left = -1
+            if not exp or exp < today_str: status, color = "Expired", "FF1744"
             elif days_left <= 7: status, color = "Expiring Soon", "FFB300"
             else: status, color = "Active", GREEN
             for c, val in enumerate([idx+1, m["name"], m["email"], m["phone"], m["plan"],
@@ -853,8 +856,8 @@ def report_excel():
         for idx, a in enumerate(attendance):
             r = 3 + idx
             status = "Inside" if not a["time_out"] else "Left"
-            for c, val in enumerate([idx+1, a["member_name"], a.get("plan") or "—",
-                                      a["date"], a["time_in"], a["time_out"] or "—", status], 1):
+            for c, val in enumerate([idx+1, a.get("member_name") or "—", a.get("plan") or "—",
+                                      a.get("date") or "—", a.get("time_in") or "—", a.get("time_out") or "—", status], 1):
                 ws4.cell(row=r, column=c, value=val)
             style_data_row(ws4, r, len(h4), alt=idx % 2 == 1)
             ws4.cell(row=r, column=7).font = Font(color=GREEN if status == "Inside" else "FF1744", name="Arial", size=9, bold=True)
