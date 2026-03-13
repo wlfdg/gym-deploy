@@ -1,17 +1,13 @@
 import axios from "axios";
-
 const API = process.env.REACT_APP_API_URL || "https://gym-deploy-sul4.onrender.com";
-
 // Cache layer to avoid redundant requests
 const cache = {};
 const CACHE_TTL = 30000; // 30s
-
 const api = axios.create({
   baseURL: API,
-  timeout: 60000, // 60s — handles Render free-tier cold starts (can take 30-50s)
+  timeout: 60000, // 60s - handles Render free-tier cold starts (can take 30-50s)
   headers: { "Content-Type": "application/json" },
 });
-
 api.interceptors.request.use((config) => {
   const u = localStorage.getItem("gym_admin") || "";
   const r = localStorage.getItem("gym_role")  || "";
@@ -21,7 +17,6 @@ api.interceptors.request.use((config) => {
   if (s) config.headers["X-Shift-Id"]    = s;
   return config;
 });
-
 // Simple in-memory cache helpers
 export function getCached(key) {
   const entry = cache[key];
@@ -34,18 +29,15 @@ export function clearCache(prefix) {
   if (!prefix) { Object.keys(cache).forEach(k => delete cache[k]); return; }
   Object.keys(cache).filter(k => k.startsWith(prefix)).forEach(k => delete cache[k]);
 }
-
 export function storeSession(username, role, shiftId) {
   localStorage.setItem("gym_admin", username);
   localStorage.setItem("gym_role",  role);
   if (shiftId) localStorage.setItem("gym_shift", String(shiftId));
 }
-
 export function getShiftId() {
   const v = localStorage.getItem("gym_shift");
   return v ? Number(v) : null;
 }
-
 export async function logoutAdmin() {
   const username = localStorage.getItem("gym_admin");
   const shiftId  = getShiftId();
@@ -55,6 +47,7 @@ export async function logoutAdmin() {
   localStorage.removeItem("gym_shift");
   clearCache();
 }
-
-export default api;
+// Default export is the URL string (used by Login.js as template literal)
+// Named export { api } is the axios instance (used by all other pages)
+export default API;
 export { api };
