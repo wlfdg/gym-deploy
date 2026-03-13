@@ -139,8 +139,8 @@ function Members() {
       await api.delete(`/members/${id}`);
       clearCache();
       fetchMembers();
-    } catch {
-      alert("Failed to delete member.");
+    } catch (e) {
+      alert(e.response?.data?.message || "Failed to delete member.");
     }
   };
 

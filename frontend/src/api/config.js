@@ -56,5 +56,5 @@ export async function logoutAdmin() {
   clearCache();
 }
 
-export default API;
+export default api;
 export { api };

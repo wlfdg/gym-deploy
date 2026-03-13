@@ -101,8 +101,7 @@ def login():
         cur2.execute("INSERT INTO admin_dtr (admin_username, date, time_in) VALUES (%s,%s,%s)",
             (admin_username, today, time_now))
         conn2.commit()
-        shift_id = cur2.lastrowid if cur2.lastrowid else None
-        # Get shift_id via SELECT since lastrowid may not work with psycopg2
+        # Get shift_id via SELECT (psycopg2 does not support lastrowid)
         cur2.execute("SELECT id FROM admin_dtr WHERE admin_username=%s AND time_out IS NULL ORDER BY id DESC LIMIT 1", (admin_username,))
         row = cur2.fetchone()
         shift_id = row[0] if row else None
@@ -547,6 +546,8 @@ def delete_walkin(walkin_id):
     conn.close()
     if rows_affected == 0:
         return error("Walk-in not found.", 404)
+    admin_user = request.headers.get("X-Admin-User", "unknown")
+    log_activity(admin_user, "DELETE_WALKIN", f"Deleted walk-in ID: {walkin_id}")
     return jsonify({"message": "Deleted"})
 
 # ── Stats ─────────────────────────────────────────────────────────────────────
@@ -815,7 +816,7 @@ def report_excel():
             r = 3 + idx
             net = m["price"] - (m["price"] * m["discount"] / 100)
             exp = m["expiration_date"]
-            days_left = (datetime.strptime(exp, "%Y-%m-%d") - datetime.now(PHT)).days
+            days_left = (datetime.strptime(exp, "%Y-%m-%d") - datetime.now(PHT).replace(tzinfo=None)).days
             if exp < today_str: status, color = "Expired", "FF1744"
             elif days_left <= 7: status, color = "Expiring Soon", "FFB300"
             else: status, color = "Active", GREEN
@@ -868,10 +869,6 @@ def report_excel():
         response.headers["Content-Disposition"] = f"attachment; filename={filename}"
         response.headers["Content-Type"] = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         return response
-    except Exception as ex:
-        return error(f"Error generating report: {str(ex)}", 500)
-
-
     except Exception as ex:
         return error(f"Error generating report: {str(ex)}", 500)
 
