@@ -1046,6 +1046,104 @@ def delete_admin_dtr(dtr_id):
     return jsonify({"message": "Record deleted"})
 
 
+
+# -- Deletion Requests ---------------------------------------------------------
+
+@app.route("/deletion-requests", methods=["GET"])
+def get_deletion_requests():
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM deletion_requests ORDER BY created_at DESC")
+    rows = rows_to_list(cur.fetchall(), cur)
+    cur.close()
+    conn.close()
+    return jsonify(rows)
+
+@app.route("/deletion-requests", methods=["POST"])
+def create_deletion_request():
+    data = request.json or {}
+    member_id   = data.get("member_id")
+    member_name = data.get("member_name", "").strip()
+    member_plan = data.get("member_plan", "").strip()
+    requested_by = request.headers.get("X-Admin-User", "unknown")
+    if not member_id or not member_name:
+        return error("member_id and member_name are required.")
+    conn = get_db()
+    cur = conn.cursor()
+    # Check if there is already a pending request for this member
+    cur.execute(
+        "SELECT id FROM deletion_requests WHERE member_id=%s AND status='pending'",
+        (member_id,)
+    )
+    if cur.fetchone():
+        cur.close()
+        conn.close()
+        return error("A deletion request for this member is already pending owner approval.", 409)
+    cur.execute(
+        "INSERT INTO deletion_requests (member_id, member_name, member_plan, requested_by, status) VALUES (%s, %s, %s, %s, 'pending')",
+        (member_id, member_name, member_plan, requested_by)
+    )
+    conn.commit()
+    # Notify owner
+    try:
+        cur.execute(
+            "INSERT INTO notifications (type, title, message) VALUES (%s, %s, %s)",
+            ("DELETION_REQUEST", "Member Deletion Request",
+             f"{requested_by} requested deletion of member: {member_name}")
+        )
+        conn.commit()
+    except Exception:
+        pass
+    cur.close()
+    conn.close()
+    log_activity(requested_by, "REQUEST_DELETE_MEMBER", f"Requested deletion of member: {member_name} (ID: {member_id})")
+    return jsonify({"message": "Deletion request submitted. Awaiting owner approval."}), 201
+
+@app.route("/deletion-requests/<int:req_id>/approve", methods=["POST"])
+def approve_deletion_request(req_id):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM deletion_requests WHERE id=%s AND status='pending'", (req_id,))
+    row = row_to_dict(cur.fetchone(), cur)
+    if not row:
+        cur.close()
+        conn.close()
+        return error("Request not found or already resolved.", 404)
+    # Actually delete the member
+    cur.execute("DELETE FROM members WHERE id=%s", (row["member_id"],))
+    # Also clean up attendance records for this member
+    cur.execute("DELETE FROM attendance WHERE member_id=%s", (row["member_id"],))
+    # Mark request as approved
+    cur.execute(
+        "UPDATE deletion_requests SET status='approved', reviewed_by='owner', reviewed_at=NOW() WHERE id=%s",
+        (req_id,)
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+    log_activity("owner", "APPROVE_DELETE_MEMBER", f"Approved deletion of member: {row['member_name']} (ID: {row['member_id']})")
+    return jsonify({"message": f"{row['member_name']} has been deleted."})
+
+@app.route("/deletion-requests/<int:req_id>/reject", methods=["POST"])
+def reject_deletion_request(req_id):
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute("SELECT * FROM deletion_requests WHERE id=%s AND status='pending'", (req_id,))
+    row = row_to_dict(cur.fetchone(), cur)
+    if not row:
+        cur.close()
+        conn.close()
+        return error("Request not found or already resolved.", 404)
+    cur.execute(
+        "UPDATE deletion_requests SET status='rejected', reviewed_by='owner', reviewed_at=NOW() WHERE id=%s",
+        (req_id,)
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
+    log_activity("owner", "REJECT_DELETE_MEMBER", f"Rejected deletion of member: {row['member_name']}")
+    return jsonify({"message": f"Deletion of {row['member_name']} has been rejected."})
+
 @app.route("/logout", methods=["POST"])
 def logout():
     data     = request.json or {}
