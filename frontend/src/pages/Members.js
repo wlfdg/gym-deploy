@@ -235,7 +235,7 @@ function Members() {
                           <button className="btn btn-ghost btn-sm"
                             onClick={() => { setEditMember(m); setShowModal(true); }}>Edit</button>
                           <button className="btn btn-danger btn-sm"
-                            onClick={() => deleteMember(m)}>Request Del</button>
+                            onClick={() => deleteMember(m.id, m.name)}>Delete</button>
                         </div>
                       </td>
                     </tr>
