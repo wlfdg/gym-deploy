@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo, useRef } from "react";
+﻿import { useEffect, useState, useCallback, useMemo, useRef } from "react";
 import { api, clearCache } from "../api/config";
 import Layout from "../components/Layout";
 
@@ -75,7 +75,7 @@ function MemberModal({ member, onClose, onSave }) {
               onKeyDown={e => e.key === "Enter" && save()} />
           </div>
           <div className="form-group">
-            <label>Price (₱) *</label>
+            <label>Price (â‚±) *</label>
             <input type="number" min="0" placeholder="999"
               value={form.price} onChange={e => set("price", e.target.value)}
               onKeyDown={e => e.key === "Enter" && save()} />
@@ -133,14 +133,17 @@ function Members() {
 
   useEffect(() => { fetchMembers(); }, [fetchMembers]);
 
-  const deleteMember = async (id, name) => {
-    if (!window.confirm(`Delete ${name}? This cannot be undone.`)) return;
+  const requestDelete = async (member) => {
+    if (!window.confirm(`Request deletion of ${member.name}?\n\nThis will send a request to the owner for approval.`)) return;
     try {
-      await api.delete(`/members/${id}`);
-      clearCache();
-      fetchMembers();
+      await api.post("/deletion-requests", {
+        member_id:   member.id,
+        member_name: member.name,
+        member_plan: member.plan,
+      });
+      alert(`Deletion request for ${member.name} has been sent to the owner for approval.`);
     } catch (e) {
-      alert(e.response?.data?.message || "Failed to delete member.");
+      alert(e.response?.data?.message || "Failed to submit deletion request.");
     }
   };
 
@@ -169,7 +172,7 @@ function Members() {
 
       <div className="toolbar">
         <div className="search-box">
-          <span className="search-icon">🔍</span>
+          <span className="search-icon">ðŸ”</span>
           <input placeholder="Search by name, email or phone..."
             value={search} onChange={e => setSearch(e.target.value)} />
         </div>
@@ -186,7 +189,7 @@ function Members() {
           <option value="Expired">Expired</option>
         </select>
         <button className="btn btn-ghost" onClick={() => window.open(`${process.env.REACT_APP_API_URL || "https://gym-deploy-sul4.onrender.com"}/export/csv`, "_blank")}>
-          ⬇ Export CSV
+          â¬‡ Export CSV
         </button>
         <button className="btn btn-primary" onClick={() => { setEditMember(null); setShowModal(true); }}>
           + Add Member
@@ -222,10 +225,10 @@ function Members() {
                       </td>
                       <td><span className="badge" style={{ background: "rgba(232,255,0,0.1)", color: "var(--accent)" }}>{m.plan}</span></td>
                       <td>{m.months}mo</td>
-                      <td style={{ fontWeight: 600 }}>₱{net.toLocaleString()}</td>
+                      <td style={{ fontWeight: 600 }}>â‚±{net.toLocaleString()}</td>
                       <td>{m.discount > 0
                         ? <span style={{ color: "var(--success)" }}>-{m.discount}%</span>
-                        : <span style={{ color: "var(--muted)" }}>—</span>}
+                        : <span style={{ color: "var(--muted)" }}>â€”</span>}
                       </td>
                       <td style={{ fontSize: 12 }}>{m.start_date}</td>
                       <td style={{ fontSize: 12 }}>{m.expiration_date}</td>
@@ -235,7 +238,7 @@ function Members() {
                           <button className="btn btn-ghost btn-sm"
                             onClick={() => { setEditMember(m); setShowModal(true); }}>Edit</button>
                           <button className="btn btn-danger btn-sm"
-                            onClick={() => deleteMember(m.id, m.name)}>Delete</button>
+                            onClick={() => requestDelete(m)}>Request Del</button>
                         </div>
                       </td>
                     </tr>
