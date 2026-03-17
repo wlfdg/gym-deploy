@@ -1,4 +1,4 @@
-from flask import Flask, request, jsonify, make_response
+﻿from flask import Flask, request, jsonify, make_response
 from flask_cors import CORS
 import psycopg2
 import psycopg2.extras
@@ -13,7 +13,7 @@ import os
 app = Flask(__name__)
 CORS(app, origins="*")
 
-# ── Database ──────────────────────────────────────────────────────────────────
+# â”€â”€ Database â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 # Set DATABASE_URL in Vercel environment variables
 # Format: postgresql://postgres:[PASSWORD]@db.[PROJECT-REF].supabase.co:5432/postgres
 
@@ -26,7 +26,7 @@ def get_db():
 def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode()).hexdigest()
 
-# ── Helpers ────────────────────────────────────────────────────────────────────
+# â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def error(msg, code=400):
     return jsonify({"message": msg}), code
@@ -48,7 +48,7 @@ def rows_to_list(rows, cursor):
     columns = [desc[0] for desc in cursor.description]
     return [dict(zip(columns, row)) for row in rows]
 
-# ── Auth ──────────────────────────────────────────────────────────────────────
+# â”€â”€ Auth â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 def log_activity(username, action, details=""):
     """Log admin activity to the database."""
@@ -145,7 +145,7 @@ def register():
         return error("Username already exists.", 409)
 
 
-# ── Notifications ─────────────────────────────────────────────────────────────
+# â”€â”€ Notifications â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @app.route("/notifications", methods=["GET"])
 def get_notifications():
@@ -171,7 +171,7 @@ def mark_notifications_read():
     return jsonify({"message": "Marked all as read"})
 
 
-# ── Superadmin: Manage Admins ─────────────────────────────────────────────────
+# â”€â”€ Superadmin: Manage Admins â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @app.route("/admins", methods=["GET"])
 def get_admins():
@@ -267,7 +267,7 @@ def pending_count():
     return jsonify({"count": count})
 
 
-# ── Activity Logs ─────────────────────────────────────────────────────────────
+# â”€â”€ Activity Logs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @app.route("/logs", methods=["GET"])
 def get_logs():
@@ -290,7 +290,7 @@ def get_logs():
     conn.close()
     return jsonify(rows)
 
-# ── Members ───────────────────────────────────────────────────────────────────
+# â”€â”€ Members â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @app.route("/members", methods=["GET"])
 def get_members():
@@ -413,7 +413,7 @@ def delete_member(member_id):
     log_activity(admin_user, "DELETE_MEMBER", f"Deleted member ID: {member_id}")
     return jsonify({"message": "Deleted"})
 
-# ── Attendance ────────────────────────────────────────────────────────────────
+# â”€â”€ Attendance â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @app.route("/attendance/timein", methods=["POST"])
 def time_in():
@@ -495,7 +495,7 @@ def get_attendance():
         "date": date
     })
 
-# ── Walk-ins ──────────────────────────────────────────────────────────────────
+# â”€â”€ Walk-ins â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @app.route("/walkins", methods=["GET"])
 def get_walkins():
@@ -550,7 +550,7 @@ def delete_walkin(walkin_id):
     log_activity(admin_user, "DELETE_WALKIN", f"Deleted walk-in ID: {walkin_id}")
     return jsonify({"message": "Deleted"})
 
-# ── Stats ─────────────────────────────────────────────────────────────────────
+# â”€â”€ Stats â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @app.route("/stats", methods=["GET"])
 def stats():
@@ -611,7 +611,7 @@ def stats():
         "visits_today": visits_today
     })
 
-# ── Expiring ──────────────────────────────────────────────────────────────────
+# â”€â”€ Expiring â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @app.route("/expiring", methods=["GET"])
 def expiring():
@@ -637,7 +637,7 @@ def expiring():
     conn.close()
     return jsonify({"expiring_soon": expiring_soon, "expired": expired})
 
-# ── Export CSV ────────────────────────────────────────────────────────────────
+# â”€â”€ Export CSV â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @app.route("/export/csv", methods=["GET"])
 def export_csv():
@@ -671,7 +671,7 @@ def export_csv():
     response.headers["Content-Type"] = "text/csv; charset=utf-8"
     return response
 
-# ── Monthly Excel Report ──────────────────────────────────────────────────────
+# â”€â”€ Monthly Excel Report â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @app.route("/report/excel", methods=["GET"])
 def report_excel():
@@ -774,7 +774,7 @@ def report_excel():
         ws1.row_dimensions[1].height = 40
         ws1.merge_cells("A2:H2")
         c = ws1["A2"]
-        c.value = f"Monthly Report — {month_name}"
+        c.value = f"Monthly Report â€” {month_name}"
         c.font = Font(color=WHITE, name="Arial", size=13)
         c.alignment = Alignment(horizontal="center", vertical="center")
         c.fill = PatternFill("solid", start_color=DARK)
@@ -786,9 +786,9 @@ def report_excel():
             ("NEW THIS MONTH", len(new_members), YELLOW),
             ("WALK-INS", len(walkins), "00B0FF"),
             ("ATTENDANCE LOGS", len(attendance), "FF9100"),
-            ("MEMBER REVENUE", f"₱{member_revenue:,.2f}", GREEN),
-            ("WALKIN REVENUE", f"₱{walkin_revenue:,.2f}", YELLOW),
-            ("TOTAL REVENUE", f"₱{total_revenue:,.2f}", "FF4D00"),
+            ("MEMBER REVENUE", f"â‚±{member_revenue:,.2f}", GREEN),
+            ("WALKIN REVENUE", f"â‚±{walkin_revenue:,.2f}", YELLOW),
+            ("TOTAL REVENUE", f"â‚±{total_revenue:,.2f}", "FF4D00"),
         ]
         for col, (label, value, color) in enumerate(kpis, 1):
             lc = ws1.cell(row=5, column=col, value=label)
@@ -806,8 +806,8 @@ def report_excel():
         ws2 = wb.create_sheet("All Members")
         ws2.sheet_view.showGridLines = False
         fill_bg(ws2, len(all_members) + 10, 11)
-        sheet_title(ws2, 1, 11, f"ALL MEMBERS — {month_name}")
-        h2 = ["#", "Name", "Email", "Phone", "Plan", "Months", "Net Price (₱)", "Discount %", "Start Date", "Expiration", "Status"]
+        sheet_title(ws2, 1, 11, f"ALL MEMBERS â€” {month_name}")
+        h2 = ["#", "Name", "Email", "Phone", "Plan", "Months", "Net Price (â‚±)", "Discount %", "Start Date", "Expiration", "Status"]
         for i, h in enumerate(h2, 1):
             ws2.cell(row=2, column=i, value=h)
         style_header_row(ws2, 2, len(h2))
@@ -831,14 +831,14 @@ def report_excel():
         ws3 = wb.create_sheet("Walk-ins")
         ws3.sheet_view.showGridLines = False
         fill_bg(ws3, len(walkins) + 10, 5)
-        sheet_title(ws3, 1, 5, f"WALK-IN REVENUE — {month_name}")
-        h3 = ["#", "Name", "Amount (₱)", "Note", "Date"]
+        sheet_title(ws3, 1, 5, f"WALK-IN REVENUE â€” {month_name}")
+        h3 = ["#", "Name", "Amount (â‚±)", "Note", "Date"]
         for i, h in enumerate(h3, 1):
             ws3.cell(row=2, column=i, value=h)
         style_header_row(ws3, 2, len(h3))
         for idx, w in enumerate(walkins):
             r = 3 + idx
-            for c, val in enumerate([idx+1, w["name"], w["amount"], w["note"] or "—", w["date"]], 1):
+            for c, val in enumerate([idx+1, w["name"], w["amount"], w["note"] or "â€”", w["date"]], 1):
                 ws3.cell(row=r, column=c, value=val)
             style_data_row(ws3, r, len(h3), alt=idx % 2 == 1)
         set_col_widths(ws3, [4, 22, 14, 24, 14])
@@ -846,7 +846,7 @@ def report_excel():
         ws4 = wb.create_sheet("Attendance")
         ws4.sheet_view.showGridLines = False
         fill_bg(ws4, len(attendance) + 10, 7)
-        sheet_title(ws4, 1, 7, f"ATTENDANCE LOG — {month_name}")
+        sheet_title(ws4, 1, 7, f"ATTENDANCE LOG â€” {month_name}")
         h4 = ["#", "Member", "Plan", "Date", "Time In", "Time Out", "Status"]
         for i, h in enumerate(h4, 1):
             ws4.cell(row=2, column=i, value=h)
@@ -854,8 +854,8 @@ def report_excel():
         for idx, a in enumerate(attendance):
             r = 3 + idx
             status = "Inside" if not a["time_out"] else "Left"
-            for c, val in enumerate([idx+1, a["member_name"], a.get("plan") or "—",
-                                      a["date"], a["time_in"], a["time_out"] or "—", status], 1):
+            for c, val in enumerate([idx+1, a["member_name"], a.get("plan") or "â€”",
+                                      a["date"], a["time_in"], a["time_out"] or "â€”", status], 1):
                 ws4.cell(row=r, column=c, value=val)
             style_data_row(ws4, r, len(h4), alt=idx % 2 == 1)
             ws4.cell(row=r, column=7).font = Font(color=GREEN if status == "Inside" else "FF1744", name="Arial", size=9, bold=True)
@@ -939,7 +939,7 @@ def get_shifts():
     return jsonify({"shifts": rows, "summary": list(summary.values())})
 
 
-# ── Admin DTR ─────────────────────────────────────────────────────────────────
+# â”€â”€ Admin DTR â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @app.route("/admin/dtr/timein", methods=["POST"])
 def admin_time_in():
@@ -1180,7 +1180,7 @@ def logout():
     return jsonify({"message": "Logged out successfully", "shift_revenue": shift_revenue})
 
 
-# ── Employee DTR ──────────────────────────────────────────────────────────────
+# â”€â”€ Employee DTR â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 @app.route("/employee/dtr/timein", methods=["POST"])
 def employee_time_in():
@@ -1320,5 +1320,9 @@ def owner_change_admin_password(username):
     log_activity(recorded_by, "CHANGE_ADMIN_PASSWORD", f"Changed password for admin: {username}")
     return jsonify({"message": f"Password for {username} updated successfully!"})
 
+
+@app.route("/health", methods=["GET"])
+def health():
+    return jsonify({"status": "ok"}), 200
 if __name__ == "__main__":
     app.run(debug=True, port=5000)
