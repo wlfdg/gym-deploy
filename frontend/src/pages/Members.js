@@ -75,7 +75,7 @@ function MemberModal({ member, onClose, onSave }) {
               onKeyDown={e => e.key === "Enter" && save()} />
           </div>
           <div className="form-group">
-            <label>Price (â‚±) *</label>
+            <label>Price (₱) *</label>
             <input type="number" min="0" placeholder="999"
               value={form.price} onChange={e => set("price", e.target.value)}
               onKeyDown={e => e.key === "Enter" && save()} />
@@ -172,7 +172,7 @@ function Members() {
 
       <div className="toolbar">
         <div className="search-box">
-          <span className="search-icon">ðŸ”</span>
+          <span className="search-icon"></span>
           <input placeholder="Search by name, email or phone..."
             value={search} onChange={e => setSearch(e.target.value)} />
         </div>
@@ -189,7 +189,7 @@ function Members() {
           <option value="Expired">Expired</option>
         </select>
         <button className="btn btn-ghost" onClick={() => window.open(`${process.env.REACT_APP_API_URL || "https://gym-deploy-sul4.onrender.com"}/export/csv`, "_blank")}>
-          â¬‡ Export CSV
+           Export CSV
         </button>
         <button className="btn btn-primary" onClick={() => { setEditMember(null); setShowModal(true); }}>
           + Add Member
